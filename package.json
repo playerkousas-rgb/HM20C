@@ -1,0 +1,31 @@
+{
+  "name": "scout-trail-map",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:offline": "npm run build && playwright test --config playwright.offline.config.js"
+  },
+  "dependencies": {
+    "@fontsource-variable/noto-sans-tc": "^5.3.1",
+    "@tomickigrzegorz/leaflet-rotate": "^0.3.0",
+    "@zip.js/zip.js": "^2.24.0",
+    "geotiff": "^2.1.3",
+    "leaflet": "^1.9.4",
+    "lucide-react": "^0.468.0",
+    "proj4": "^2.22.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "jsdom": "^26.0.0",
+    "vite": "^6.1.0",
+    "vitest": "^3.0.5"
+  }
+}

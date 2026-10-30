@@ -1,0 +1,20 @@
+node_modules/
+dist/
+coverage/
+.vite/
+.DS_Store
+
+playwright-report/
+test-results/
+.tmp/
+
+# Real map rasters and offline packages are not deployment assets. Samples
+# should be analysed outside the repository, not committed to Git/Vercel.
+*.tif
+*.tiff
+*.TIF
+*.TIFF
+*.geotiff
+*.pmtiles
+*.mbtiles
+*.gpkg

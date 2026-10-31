@@ -58,6 +58,7 @@ test('panning, changing direction and dragging keep vectors and coordinates alig
   expect(await nearestPath(page, '.leaflet-overlay-pane path[stroke="#a33555"]', start)).toBeLessThan(3);
 
   await page.getByRole('button', { name: '開始繪畫路線' }).click();
+  await page.getByRole('button', { name: '直線路點', exact: true }).click();
   start = await point(page.locator('.route-marker--start'));
   await page.mouse.move(start.x, start.y);
   await page.mouse.down();

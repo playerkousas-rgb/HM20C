@@ -60,6 +60,7 @@ test('production shell, rotated government tiles, labels, paginated contours and
   await page.goto('/');
   await expect(page.locator('.source-pill')).toContainText('iB20000 等高距');
   await page.getByRole('button', { name: '開始繪畫路線' }).click();
+  await page.getByRole('button', { name: '直線路點', exact: true }).click();
   await page.locator('.map-canvas').click({ position: { x: 150, y: 220 } });
   await page.locator('.map-canvas').click({ position: { x: 225, y: 300 } });
   await page.getByRole('button', { name: '完成繪畫' }).click();
@@ -160,6 +161,7 @@ test('opaque countryside tiles use a fallback, reload offline separately, and cl
   await page.goto('/');
   await page.getByRole('button', { name: '郊遊圖', exact: true }).click();
   await page.getByRole('button', { name: '開始繪畫路線' }).click();
+  await page.getByRole('button', { name: '直線路點', exact: true }).click();
   await page.locator('.map-canvas').click({ position: { x: 150, y: 220 } });
   await page.getByRole('button', { name: '完成繪畫' }).click();
   await page.getByRole('button', { name: '選擇地區與書籤' }).click();
@@ -319,4 +321,37 @@ test('a standalone app is not mistaken for a browser tab needing installation', 
   await page.locator('.install-guide summary').click();
   await expect(page.locator('.install-guide-content')).toContainText('現正以主畫面 App 開啟');
   await expect(page.getByRole('button', { name: '加入主畫面', exact: true })).toHaveCount(0);
+});
+
+test('leader answers remain available in an unlocked tab offline, but reload does not cache the password or unlock', async ({ page, context }) => {
+  await mockProviders(context, {});
+  await page.goto('/');
+  await expect(page.locator('.source-pill')).toContainText('iB20000');
+  await expect.poll(() => page.evaluate(async () => Boolean((await navigator.serviceWorker.getRegistration())?.active)), { timeout: 30_000 }).toBe(true);
+  await page.reload();
+  await expect(page.locator('.source-pill')).toContainText('iB20000');
+  await page.getByRole('button', { name: '兩點方位直線' }).click();
+  const box = await page.locator('.map-canvas').boundingBox();
+  await page.mouse.click(box.x + 200, box.y + 185);
+  await page.mouse.click(box.x + 290, box.y + 300);
+  await expect(page.locator('.bearing-marker')).toHaveCount(2);
+  await page.getByRole('button', { name: '開啟領袖模式' }).click();
+  await page.getByLabel('領袖密碼').fill('playwright-only-test-secret');
+  await page.getByRole('button', { name: '解鎖領袖模式' }).click();
+  await expect(page.locator('.bearing-answers')).toContainText('磁北');
+  await context.setOffline(true);
+  await expect(page.locator('.leader-coordinate')).toBeVisible();
+  await expect(page.locator('.bearing-answers')).toContainText('方格');
+  await page.reload();
+  await expect(page.locator('.leader-coordinate')).toHaveCount(0);
+  await page.getByRole('button', { name: '開啟領袖模式' }).click();
+  await page.getByLabel('領袖密碼').fill('playwright-only-test-secret');
+  await page.getByRole('button', { name: '解鎖領袖模式' }).click();
+  await expect(page.getByRole('alert')).toContainText('需要網絡');
+  const cachedLeader = await page.evaluate(async () => {
+    const names = await caches.keys();
+    for (const name of names) if ((await (await caches.open(name)).keys()).some((request) => request.url.includes('/api/leader'))) return true;
+    return false;
+  });
+  expect(cachedLeader).toBe(false);
 });

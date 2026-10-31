@@ -140,6 +140,7 @@ test('synthetic local TIFF renders georeferenced tiles and route, survives offli
     expect(sample.pixel[2]).toBe(91);
   }
   await page.getByRole('button', { name: '開始繪畫路線' }).click();
+  await page.getByRole('button', { name: '直線路點', exact: true }).click();
   await page.locator('.map-canvas').click({ position: { x: 150, y: 210 } });
   await expect(page.locator('.stat').nth(1)).toContainText('1 點');
   await page.getByRole('button', { name: '完成繪畫' }).click();

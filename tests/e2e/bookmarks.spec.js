@@ -47,6 +47,7 @@ test('mobile reading mode makes room without changing map centre or scale, and s
   await expect(page.locator('.map-canvas')).toHaveAttribute('data-rotation', rotation);
 
   await page.getByRole('button', { name: '繪路', exact: true }).click();
+  await page.getByRole('button', { name: '直線路點', exact: true }).click();
   await expect(page.getByRole('button', { name: '完成繪畫' })).toBeVisible();
   await expect(marker).toHaveCount(0);
   await page.locator('.map-canvas').click({ position: { x: 130, y: 160 } });

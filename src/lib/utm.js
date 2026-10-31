@@ -116,3 +116,39 @@ export function utmGridLines(bounds) {
   }
   return result;
 }
+
+// The user-facing eight-figure reference identifies a 10 m cell, not an exact
+// point. Decode its centre for map display; retain the full zone and square so
+// western Hong Kong cannot silently default to 50Q KK.
+export function parseGridReference(input) {
+  if (typeof input !== 'string') return null;
+  const match = input.trim().toUpperCase().match(/^(49|50)\s*Q\s*[- ]?\s*([A-HJ-NP-Z]{2})\s*(\d{4})\s*(\d{4})$/);
+  if (!match) return null;
+  const [, zoneString, square, east, north] = match;
+  const zone = Number(zoneString);
+  const column = columns[zone].indexOf(square[0]);
+  const row = rows[zone].indexOf(square[1]);
+  if (column < 0 || row < 0) return null;
+  // The local rectangle lies in the northing cycle beginning at 2,000 km.
+  // Decode the row letters instead of assuming KK/HE or a fixed 2,480 km base.
+  const point = fromUtm((column + 1) * 100000 + Number(east) * 10 + 5, 2000000 + row * 100000 + Number(north) * 10 + 5, zone);
+  if (!inHongKongGrid(point)) return null;
+  const expected = `${zone}Q ${square} ${east} ${north}`;
+  if (gridReference(point)?.text !== expected) return null;
+  return { ...point, text: expected, zone, square, east, north };
+}
+
+// Label on the positive side of a kilometre line. In particular, sampling
+// exactly on a 100 km boundary is vulnerable to projection round-off and can
+// display the neighbouring square with the wrong 00 label.
+export function gridLineLabel(line, point) {
+  if (!line || !['easting', 'northing'].includes(line.axis)) return '';
+  const projected = toUtm(point, line.zone);
+  if (!projected) return '';
+  const sample = line.axis === 'easting'
+    ? fromUtm(line.value + 1, projected.northing, line.zone)
+    : fromUtm(projected.easting, line.value + 1, line.zone);
+  const reference = gridReference(sample);
+  const square = reference?.zone === line.zone ? ` ${reference.square}` : '';
+  return `${line.zone}Q${square} · ${line.axis === 'easting' ? 'X' : 'Y'} ${line.label}`;
+}

@@ -2,17 +2,20 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Camera, Copy, ImagePlus, MapPin, QrCode, RotateCcw, ScanLine, Share2 } from 'lucide-react';
 import QRCode from 'qrcode';
 import jsQR from 'jsqr';
-import { decodeExercise, exerciseUrl, MAX_EXERCISE_POINTS, validateExercise } from '../lib/exercise';
+import { exerciseUrl, MAX_EXERCISE_POINTS, validateExercise } from '../lib/exercise';
+import { decodeShared } from '../lib/questionSet';
 
 const labels = { points: '地圖標記', bearing: '兩點方位', resection: '三角網測' };
 export function requiredPoints(kind) { return kind === 'bearing' ? 2 : kind === 'resection' ? 3 : MAX_EXERCISE_POINTS; }
 export function enoughPoints(draft) { return draft.kind === 'points' ? draft.points.length >= 1 : draft.points.length === requiredPoints(draft.kind); }
 
-export function ExerciseHome({ leader, exercise, onCreate, onScan, onRestore, onClear, onGoPoint }) {
+export function ExerciseHome({ leader, exercise, memberSet, onCreate, onBank, onMember, onScan, onRestore, onClear, onGoPoint }) {
   return <div className="exercise-content">
     <p className="modal-intro">領袖標記地點後產生 QR Code；成員可在這裏讀取，地標會顯示在地圖上。</p>
     <div className="modal-option-list">
-      <button onClick={onScan}><span className="option-icon"><ScanLine size={20}/></span><span><strong>讀取題目 QR Code</strong><small>使用相機或選擇 QR 圖片</small></span></button>
+      <button onClick={onScan}><span className="option-icon"><ScanLine size={20}/></span><span><strong>讀取題目 QR Code</strong><small>可讀取活動、題目、答案 QR 或 JSON</small></span></button>
+      {memberSet && <button onClick={onMember}><span className="option-icon"><MapPin size={20}/></span><span><strong>查看多題套題</strong><small>{memberSet.name} · {memberSet.questions.length} 題</small></span></button>}
+      {leader && <button onClick={onBank}><span className="option-icon"><QrCode size={20}/></span><span><strong>領袖題庫及同步活動</strong><small>多題、答案分享與線上更新</small></span></button>}
       {leader && <button onClick={onCreate}><span className="option-icon"><QrCode size={20}/></span><span><strong>領袖設題及分享</strong><small>選類型、在地圖標記，再產生 QR Code</small></span></button>}
     </div>
     {exercise && <div className="exercise-current"><div className="exercise-current-heading"><strong>{exercise.title}</strong><span>{labels[exercise.kind]}</span></div>
@@ -20,7 +23,7 @@ export function ExerciseHome({ leader, exercise, onCreate, onScan, onRestore, on
       <ol>{exercise.points.map((point, index) => <li key={index}><button onClick={() => onGoPoint(point, index)}><b>{String.fromCharCode(65 + index)}</b> {point.name || '未命名地點'} <span>移至地點 →</span></button></li>)}</ol>
       <div className="exercise-current-actions"><button onClick={onRestore}><MapPin size={15}/>重新顯示題目</button><button onClick={onClear}>清除題目</button></div>
     </div>}
-    <p className="modal-footnote">題目及地點直接記錄在 QR Code，沒有上載伺服器；任何持有人都可以讀取或修改內容。讀取題目不會取代路線或 GPX。</p>
+    <p className="modal-footnote">單題 QR 內容自包含；多題可用離線 QR，或在已設定資料庫後使用連網活動。讀取題目不會取代路線或 GPX。</p>
   </div>;
 }
 
@@ -71,12 +74,13 @@ export function ExerciseEditor({ draft, onChange, onMark, onCancel, onNew }) {
   </div>;
 }
 
-export function ExerciseMarkCard({ draft, onUndo, onClear, onComplete, onCancel }) {
-  const maximum = requiredPoints(draft.kind);
+export function ExerciseMarkCard({ draft, limit, onUndo, onClear, onComplete, onCancel }) {
+  const maximum = limit || requiredPoints(draft.kind);
+  const complete = limit ? draft.points.length === limit : enoughPoints(draft);
   return <div className="bearing-card exercise-mark-card" aria-label="題目地標標記">
     <div className="bearing-card-heading"><span><MapPin size={15}/> 領袖標記地標</span></div>
     <p className="bearing-hint">{draft.points.length >= maximum ? '已選滿；可返回題目編輯名稱。' : `在地圖點選 ${String.fromCharCode(65 + draft.points.length)}；拖動地圖可平移。`}（{draft.points.length}/{maximum}）</p>
-    <div className="bearing-card-actions"><button onClick={onUndo} disabled={!draft.points.length}>撤回一點</button><button onClick={onClear} disabled={!draft.points.length}><RotateCcw size={13}/>重選</button><button onClick={onComplete} disabled={!enoughPoints(draft)}>完成選點</button><button onClick={onCancel}>返回</button></div>
+    <div className="bearing-card-actions"><button onClick={onUndo} disabled={!draft.points.length}>撤回一點</button><button onClick={onClear} disabled={!draft.points.length}><RotateCcw size={13}/>重選</button><button onClick={onComplete} disabled={!complete}>完成選點</button><button onClick={onCancel}>返回</button></div>
   </div>;
 }
 
@@ -109,8 +113,8 @@ export function ExerciseScanner({ onRead, onBack }) {
     return () => { live.current = false; stop(); document.removeEventListener('visibilitychange', hide); };
   }, []);
   function accept(text) {
-    const exercise = decodeExercise(text);
-    stop(); onRead(exercise);
+    const packet = decodeShared(text);
+    onRead(packet); stop();
   }
   async function startCamera() {
     if (busy || scanning) return;
@@ -146,6 +150,11 @@ export function ExerciseScanner({ onRead, onBack }) {
     if (!file) return;
     if (file.size > 12 * 1024 * 1024) { setError('圖片超過 12 MB，請選較小的 QR 圖片。'); return; }
     setError(''); setBusy(true);
+    if (file.name.toLowerCase().endsWith('.json') || file.type === 'application/json') {
+      try { accept(await file.text()); } catch (cause) { if (live.current) setError(cause?.message || '未能讀取 JSON。'); }
+      finally { if (live.current) setBusy(false); }
+      return;
+    }
     const url = URL.createObjectURL(file);
     try {
       const image = new Image();
@@ -157,11 +166,11 @@ export function ExerciseScanner({ onRead, onBack }) {
     finally { URL.revokeObjectURL(url); if (live.current) setBusy(false); }
   }
   return <div className="exercise-scanner">
-    <p className="modal-intro">對準領袖的題目 QR，或選擇已儲存的 QR 圖片。圖片及相機畫面只在此手機處理。</p>
+    <p className="modal-intro">對準領袖的活動、題目或答案 QR；亦可選擇 QR 圖片或 JSON。圖片及相機畫面只在此手機處理。</p>
     <video ref={video} className={scanning ? 'is-scanning' : ''} muted playsInline aria-label="QR 掃描相機" />
     {error && <p className="leader-error" role="alert">{error}</p>}
-    <div className="exercise-scan-actions">{scanning ? <button className="secondary-button" onClick={stop}>停止相機</button> : <button className="primary-button" onClick={startCamera} disabled={busy}><Camera size={17}/>開啟相機</button>}<button className="secondary-button" onClick={() => fileInput.current?.click()} disabled={busy}><ImagePlus size={17}/>選擇 QR 圖片</button></div>
-    <input ref={fileInput} type="file" accept="image/*" aria-label="選擇題目 QR 圖片" hidden onChange={selectImage}/>
+    <div className="exercise-scan-actions">{scanning ? <button className="secondary-button" onClick={stop}>停止相機</button> : <button className="primary-button" onClick={startCamera} disabled={busy}><Camera size={17}/>開啟相機</button>}<button className="secondary-button" onClick={() => fileInput.current?.click()} disabled={busy}><ImagePlus size={17}/>選擇 QR 圖片／JSON</button></div>
+    <input ref={fileInput} type="file" accept="image/*,.json,application/json" aria-label="選擇題目 QR 圖片" hidden onChange={selectImage}/>
     <div className="modal-actions"><button className="secondary-button" onClick={() => { stop(); onBack(); }}>返回</button></div>
     <p className="modal-footnote">相機需要 HTTPS 及你的授權；關閉或離開掃描頁會停止相機。不會要求 GPS 定位。</p>
   </div>;

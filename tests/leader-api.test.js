@@ -18,7 +18,8 @@ describe('server-side leader password', () => {
     expect(wrong.status).toBe(401);
     const correct = await request();
     expect(correct.status).toBe(200);
-    expect(correct.body).toEqual({ ok: true, durationSeconds: 28800 });
+    expect(correct.body).toMatchObject({ ok: true, durationSeconds: 28800 });
+    expect(correct.body.token).toMatch(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
     expect(JSON.stringify(correct)).not.toContain('correct secret');
     expect(correct.headers['Cache-Control']).toContain('no-store');
   });

@@ -21,14 +21,14 @@ export default function LeaderContent({ active, onUnlock, onLock }) {
         body: JSON.stringify({ password }), cache: 'no-store', signal: abort.signal,
       });
       const result = await response.json().catch(() => ({}));
-      if (!response.ok || result.ok !== true || !Number.isFinite(result.durationSeconds)) {
+      if (!response.ok || result.ok !== true || !Number.isFinite(result.durationSeconds) || typeof result.token !== 'string') {
         if (response.status === 503 && result.error === 'not_configured') throw new Error('尚未在 Vercel 設定 LEADER_PASSWORD；設定後須重新部署。');
         if (response.status === 429) throw new Error('嘗試次數過多，請稍後再試。');
         if (response.status === 401) throw new Error('密碼不正確，請再試。');
         throw new Error('領袖驗證服務暫時不可用，請檢查部署及網絡。');
       }
       setPassword('');
-      onUnlock(Math.min(Math.max(result.durationSeconds, 1), 8 * 60 * 60));
+      onUnlock(Math.min(Math.max(result.durationSeconds, 1), 8 * 60 * 60), result.token);
     } catch (cause) {
       if (controller.current === abort) setError(cause?.name === 'AbortError' ? '驗證逾時或已取消；請檢查網絡再試。' : cause.message || '未能連接驗證服務。');
     } finally {

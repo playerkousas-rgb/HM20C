@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { defineConfig, loadEnv } from 'vite';
 import leaderHandler from './api/leader.js';
+import activityHandler from './api/activity.js';
+import { createMemoryActivityStore } from './server/activity-store.js';
 
 // Cache the exact production shell (including self-hosted font subsets), not a
 // stale hand-maintained list of hashed files. Map data has its own caches.
@@ -27,14 +29,18 @@ function offlineWorker() {
 // The same Node handler runs locally and as /api/leader on Vercel. Browser
 // code always uses a relative URL, including in Arena's HTTPS preview proxy.
 function localLeaderApi() {
+  const memoryStore = createMemoryActivityStore();
   const middleware = (server) => {
-    server.middlewares.use('/api/leader', (req, res) => {
-      const localEnv = loadEnv(server.config.mode, server.config.root, 'LEADER_PASSWORD');
-      void leaderHandler(req, res, { password: process.env.LEADER_PASSWORD ?? localEnv.LEADER_PASSWORD }).catch(() => {
+    const localEnv = { ...loadEnv(server.config.mode, server.config.root, ''), ...process.env };
+    const options = { password: localEnv.LEADER_PASSWORD, env: localEnv, store: localEnv.ACTIVITY_DEV_MEMORY === '1' ? memoryStore : null };
+    function safely(handler, req, res) {
+      void handler(req, res, options).catch(() => {
         if (!res.headersSent) { res.statusCode = 500; res.setHeader('Cache-Control', 'no-store'); }
         res.end();
       });
-    });
+    }
+    server.middlewares.use('/api/leader', (req, res) => safely(leaderHandler, req, res));
+    server.middlewares.use('/api/activity', (req, res) => safely(activityHandler, req, res));
   };
   return { name: 'local-leader-api', configureServer: middleware, configurePreviewServer: middleware };
 }

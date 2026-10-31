@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { magvar } from 'magvar';
 import { bearingAnswers, formatBearing, magneticDeclination } from '../src/lib/bearing';
-import { fromUtm, gridReference, toUtm, utmGridLines } from '../src/lib/utm';
+import { fromUtm, gridLineLabel, gridReference, parseGridReference, toUtm, utmGridLines } from '../src/lib/utm';
 import { extendToViewport } from '../src/map/bearingLayer';
 
 describe('WGS84 UTM teaching grid', () => {
@@ -12,11 +12,39 @@ describe('WGS84 UTM teaching grid', () => {
     expect(gridReference({ lat: 22.3835, lon: 114 }).zone).toBe(50);
     expect(gridReference({ lat: 10, lon: 114 })).toBeNull();
   });
+  it('decodes a full eight-figure grid reference as the centre of the correct cell', () => {
+    const point = parseGridReference('50Q KK 2430 7773');
+    expect(point.text).toBe('50Q KK 2430 7773');
+    const utm = toUtm(point, 50);
+    expect(utm.easting).toBeCloseTo(224305, 3);
+    expect(utm.northing).toBeCloseTo(2477735, 3);
+    expect(gridReference(point).text).toBe(point.text);
+    expect(parseGridReference('49Q HE 0199 6342').zone).toBe(49);
+    expect(parseGridReference('50Q HE 0199 6342')).toBeNull();
+    const north = gridReference({ lat: 22.64, lon: 114.3 });
+    expect(north.square).toBe('KL');
+    expect(parseGridReference(north.text).text).toBe(north.text);
+    const northWest = gridReference({ lat: 22.64, lon: 113.85 });
+    expect(northWest.square).toBe('GF');
+    expect(parseGridReference(northWest.text).text).toBe(northWest.text);
+    // Lands Department control point: south-west corner of the example cell.
+    const corner = fromUtm(224300, 2477730, 50);
+    expect(corner.lat).toBeCloseTo(22.383496510, 8);
+    expect(corner.lon).toBeCloseTo(114.322464053, 8);
+    expect(parseGridReference('KK 2430 7773')).toBeNull();
+    expect(parseGridReference('50Q KK 243 777')).toBeNull();
+  });
   it('truncates 10 m cells and 100 km letters without prematurely rounding metres', () => {
     const before = gridReference(fromUtm(199999.8, 2477739.8, 50));
     const after = gridReference(fromUtm(200000.2, 2477740.2, 50));
     expect(before.text).toBe('50Q JK 9999 7773');
     expect(after.text).toBe('50Q KK 0000 7774');
+  });
+  it('labels 100 km boundaries on their positive side without floating-point square errors', () => {
+    const eastBoundary = fromUtm(200000, 2477730, 50);
+    expect(gridLineLabel({ zone: 50, axis: 'easting', value: 200000, label: '00' }, eastBoundary)).toBe('50Q KK · X 00');
+    const northBoundary = fromUtm(224300, 2500000, 50);
+    expect(gridLineLabel({ zone: 50, axis: 'northing', value: 2500000, label: '00' }, northBoundary)).toBe('50Q KL · Y 00');
   });
   it('projects kilometre lines separately and clips them at 114°', () => {
     const lines = utmGridLines({ south: 22.37, north: 22.40, west: 113.97, east: 114.03 });

@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
+import { issueLeaderSession, leaderSigningSecret } from '../server/leader-session.js';
 
 // This function verifies the password but does not claim to protect map data:
 // the map and the calculations are shipped to every browser for offline use.
@@ -74,7 +75,7 @@ export default async function leaderHandler(req, res, options = {}) {
     entry.failures += 1; reply(res, 401, { error: 'incorrect' }); return;
   }
   attempts.delete(key);
-  // No password, bearer token, or persistent client credential is returned.
-  // The browser unlocks its own teaching UI for this tab until expiry.
-  reply(res, 200, { ok: true, durationSeconds: SESSION_SECONDS });
+  // The short-lived, signed token authorizes activity writes; the browser
+  // keeps it only in memory and never receives the password back.
+  reply(res, 200, { ok: true, durationSeconds: SESSION_SECONDS, token: issueLeaderSession(leaderSigningSecret(password, options.env || process.env)) });
 }

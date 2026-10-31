@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import QRCode from 'qrcode';
 import { exerciseUrl } from '../../src/lib/exercise';
+import { answerShare, questionShare } from '../../src/lib/questionSet';
 
 // These are deliberately synthetic fixtures, not real navigable map data.
 const tile = '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="#e7e8d6"/></svg>';
@@ -392,4 +393,50 @@ test('a cached production app reads a QR image offline and restores its landmark
   await expect(page.getByRole('button', { name: '地形圖', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('.source-pill')).toContainText('等高線未能載入');
   expect(requests).toEqual([]);
+});
+
+
+test('cached production app reads multi-question and matching answer QR offline without caching the activity API', async ({ page, context }) => {
+  await mockProviders(context, {}); await page.goto('/');
+  await expect.poll(() => page.evaluate(async () => Boolean((await navigator.serviceWorker.getRegistration())?.active)), { timeout: 30_000 }).toBe(true);
+  await page.reload();
+  const set = { id: 'aaaaaaaaaaaaaaaa', name: '離線兩題', revision: 1, questions: [
+    { id: '1111111111111111', type: 'identify', prompt: '這格是甚麼圖例？', reference: '50Q KK 2430 7773', points: [], answer: '離線私人答案' },
+    { id: '2222222222222222', type: 'free', prompt: '怎樣讀圖？', reference: '', points: [], answer: '先橫後直' },
+  ] };
+  const base = 'http://127.0.0.1:5177/';
+  const questions = await QRCode.toBuffer(questionShare(set, base), { width: 512, margin: 4 });
+  const answers = await QRCode.toBuffer(answerShare(set, [set.questions[0].id], base), { width: 512, margin: 4 });
+  const newerQuestions = await QRCode.toBuffer(questionShare({ ...set, revision: 2 }, base), { width: 512, margin: 4 });
+  // Even an API response received before going offline must not enter any SW cache.
+  await page.evaluate(() => fetch('/api/activity?id=AAAAAAAAAAAAAAAAAAAAAA').catch(() => null));
+  const cached = await page.evaluate(async () => {
+    for (const name of await caches.keys()) if ((await (await caches.open(name)).keys()).some((request) => request.url.includes('/api/activity'))) return true;
+    return false;
+  });
+  expect(cached).toBe(false);
+  await context.setOffline(true); await page.reload();
+  await page.getByRole('button', { name: '題目', exact: true }).click();
+  await page.getByRole('button', { name: /讀取題目 QR Code/ }).click();
+  await page.getByLabel('選擇題目 QR 圖片').setInputFiles({ name: 'questions.png', mimeType: 'image/png', buffer: questions });
+  await expect(page.getByRole('dialog')).toContainText('離線兩題');
+  await expect(page.getByRole('dialog')).not.toContainText('離線私人答案');
+  await page.getByRole('button', { name: '讀取題目／答案' }).click();
+  await page.getByLabel('選擇題目 QR 圖片').setInputFiles({ name: 'answers.png', mimeType: 'image/png', buffer: answers });
+  await expect(page.getByRole('dialog')).toContainText('離線私人答案');
+  await expect(page.getByText('答案尚未公布')).toHaveCount(1);
+  // A new question version must not accept an old answer, and previous
+  // answers must not leak into the new version.
+  await page.getByRole('button', { name: '讀取題目／答案' }).click();
+  await page.getByLabel('選擇題目 QR 圖片').setInputFiles({ name: 'newer.png', mimeType: 'image/png', buffer: newerQuestions });
+  await expect(page.getByRole('dialog')).not.toContainText('離線私人答案');
+  await page.getByRole('button', { name: '讀取題目／答案' }).click();
+  await page.getByLabel('選擇題目 QR 圖片').setInputFiles({ name: 'old-answer.png', mimeType: 'image/png', buffer: answers });
+  await expect(page.getByRole('alert')).toContainText('版本不同');
+  await page.getByRole('button', { name: '返回' }).click();
+  await page.reload();
+  await page.getByRole('button', { name: '題目', exact: true }).click();
+  await page.getByRole('button', { name: /查看多題套題/ }).click();
+  await expect(page.getByRole('dialog')).toContainText('版本 2');
+  await expect(page.getByRole('dialog')).not.toContainText('離線私人答案');
 });

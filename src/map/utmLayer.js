@@ -1,5 +1,5 @@
 import * as L from 'leaflet';
-import { gridReference, utmGridLines } from '../lib/utm';
+import { gridLineLabel, utmGridLines } from '../lib/utm';
 
 /** Geographic 1 km grid: the pane rotates and pans with the basemap. */
 export function createUtmLayer(map) {
@@ -23,10 +23,9 @@ export function createUtmLayer(map) {
         .filter(({ screen }) => screen.x >= 5 && screen.x <= size.x - 5 && screen.y >= 5 && screen.y <= size.y - 5);
       const target = candidates.sort((a, b) => line.axis === 'easting' ? b.screen.y - a.screen.y : a.screen.x - b.screen.x)[0];
       if (target) {
-        const reference = gridReference(target.point);
-        const title = `${line.zone}Q${reference?.zone === line.zone ? ` ${reference.square}` : ''} · ${line.label}`;
+        const title = gridLineLabel(line, target.point);
         L.marker([target.point.lat, target.point.lon], {
-          icon: L.divIcon({ className: 'utm-grid-label', html: title, iconSize: [58, 15], iconAnchor: [line.axis === 'easting' ? 29 : 0, line.axis === 'easting' ? 17 : 7] }),
+          icon: L.divIcon({ className: 'utm-grid-label', html: title, iconSize: [70, 15], iconAnchor: [line.axis === 'easting' ? 35 : 0, line.axis === 'easting' ? 17 : 7] }),
           interactive: false, keyboard: false, zIndexOffset: -500,
         }).addTo(labels);
       }

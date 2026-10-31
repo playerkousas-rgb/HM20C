@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { drawStroke, mockHiking } from './helpers';
 
 // Synthetic tiles and contours only; these are not real map data.
 const blankTile = '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"/>';
@@ -23,7 +24,7 @@ async function watchGeolocation(page) {
 
 test('mobile reading mode makes room without changing map centre or scale, and safely ends drawing', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
-  await mockMaps(page);
+  await mockMaps(page); await mockHiking(page);
   await page.goto('/');
   await expect(page.locator('.source-pill')).toContainText('iB20000');
   const coordinates = await page.locator('.map-coordinates').innerText();
@@ -47,17 +48,16 @@ test('mobile reading mode makes room without changing map centre or scale, and s
   await expect(page.locator('.map-canvas')).toHaveAttribute('data-rotation', rotation);
 
   await page.getByRole('button', { name: '繪路', exact: true }).click();
-  await page.getByRole('button', { name: '直線路點', exact: true }).click();
   await expect(page.getByRole('button', { name: '完成繪畫' })).toBeVisible();
   await expect(marker).toHaveCount(0);
-  await page.locator('.map-canvas').click({ position: { x: 130, y: 160 } });
-  await expect(page.locator('.stat').nth(1)).toContainText('1 點');
+  await drawStroke(page, [[130, 160], [170, 180]]);
+  await expect(page.locator('.stat').nth(1)).toContainText('2 點');
   await page.getByRole('button', { name: '收起路線' }).click();
   await expect(page.locator('.drawing-indicator')).toHaveCount(0);
   await expect(page.locator('.map-center-marker')).toBeVisible();
   await page.locator('.map-canvas').click({ position: { x: 130, y: 160 } });
   await page.getByRole('button', { name: '顯示路線' }).click();
-  await expect(page.locator('.stat').nth(1)).toContainText('1 點');
+  await expect(page.locator('.stat').nth(1)).toContainText('2 點');
   await expect(page.getByRole('button', { name: '開始繪畫路線' })).toBeVisible();
 });
 
@@ -74,15 +74,19 @@ test('a manually selected centre can be saved, revisited on the current basemap,
   await page.mouse.up();
   await page.getByRole('button', { name: '選擇地區與書籤' }).click();
   await expect(page.getByText('書籤只保存手選座標', { exact: false })).toBeVisible();
-  const shownCentre = await page.locator('.place-center').innerText();
   await page.getByLabel('書籤名稱').fill('童軍集合點');
+  const shownCentre = await page.locator('.place-center').innerText();
   await page.getByRole('button', { name: '儲存圖心' }).click();
   await expect(page.getByRole('status')).toContainText('書籤不包含地圖資料');
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('scout-trail-map.bookmarks.v1')));
   expect(saved).toHaveLength(1);
   expect(saved[0].name).toBe('童軍集合點');
-  expect(shownCentre).toContain(saved[0].lat.toFixed(5));
-  expect(shownCentre).toContain(saved[0].lon.toFixed(5));
+  // The display rounds to five decimal places while storage rounds to seven;
+  // rounding one rounded value a second time can flip the final displayed digit.
+  const displayed = shownCentre.match(/([0-9.]+)° N\s+([0-9.]+)° E/);
+  expect(displayed).not.toBeNull();
+  expect(Math.abs(Number(displayed[1]) - saved[0].lat)).toBeLessThan(0.00001);
+  expect(Math.abs(Number(displayed[2]) - saved[0].lon)).toBeLessThan(0.00001);
 
   await page.getByRole('button', { name: /大帽山/ }).click();
   await expect(page.locator('.map-coordinates')).toContainText('22.410');

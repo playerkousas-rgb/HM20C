@@ -1,9 +1,11 @@
 import { emptyRoute, MAX_GPX_POINTS } from './gpx';
 import { DEFAULT_ORIENTATION, isOrientationPreference } from './orientation';
+import { inHongKongGrid } from './utm';
 
 const ROUTE_KEY = 'scout-trail-map.route.v1';
 const PREFS_KEY = 'scout-trail-map.prefs.v1';
 const VIEW_KEY = 'scout-trail-map.map-centre.v1';
+const RESECTION_KEY = 'scout-trail-map.resection.v1';
 export const DEFAULT_MAP_CENTER = { lat: 22.3835, lon: 114.3225 };
 
 function validPoint(point) {
@@ -59,5 +61,19 @@ export function loadPreferences() {
 
 export function savePreferences(prefs) {
   try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); return true; }
+  catch { return false; }
+}
+
+// The user's chosen resection lines are local work, not a location fix.
+export function loadResection() {
+  try {
+    const points = JSON.parse(localStorage.getItem(RESECTION_KEY));
+    if (!Array.isArray(points) || points.length > 3) return [];
+    if (!points.every((point) => inHongKongGrid(point) && Number.isFinite(point.angle) && point.angle >= 0 && point.angle < 360 && typeof point.set === 'boolean' && typeof point.name === 'string' && [...point.name].length <= 12)) return [];
+    return points.map(({ lat, lon, name, angle, set }) => ({ lat, lon, name, angle, set }));
+  } catch { return []; }
+}
+export function saveResection(points) {
+  try { localStorage.setItem(RESECTION_KEY, JSON.stringify(points)); return true; }
   catch { return false; }
 }

@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Crosshair, Minimize2, RotateCcw, X } from 'lucide-react';
 import { bearingAnswers, formatBearing } from '../lib/bearing';
 
-export default function BearingCard({ points, active, leader, onReset, onFinish, onResume }) {
+export default function BearingCard({ points, names = [], active, leader, onReset, onFinish, onResume }) {
   const [minimized, setMinimized] = useState(false);
   const previousCount = useRef(points.length);
   useEffect(() => {
@@ -21,7 +21,8 @@ export default function BearingCard({ points, active, leader, onReset, onFinish,
   return <div className={`bearing-card ${!active ? 'bearing-card--compact' : ''}`} aria-label="兩點方位工具">
     <div className="bearing-card-heading"><span><Crosshair size={15}/> {active ? '兩點方位直線' : '方位線已保留'}</span>
       {active && <div className="bearing-heading-actions"><button onClick={() => setMinimized(true)} aria-label="縮小方位工具" title="縮小方位工具"><Minimize2 size={15}/></button><button onClick={onFinish} aria-label="完成方位量度" title="完成方位量度"><X size={16}/></button></div>}</div>
-    {active && <p className="bearing-hint">{points.length === 0 ? '先在地圖點選 A，再點選 B。' : points.length === 1 ? '再點選 B；完成後可拖動十字。' : '拖動 A / B 十字；沿方格北量度。'}</p>}
+    {active && <p className="bearing-hint">{points.length === 0 ? '先在地圖點選 A，再點選 B。' : points.length === 1 ? '再點選 B；兩點選定後固定。' : '兩點已固定；沿方格北量度。'}</p>}
+    {active && names.some(Boolean) && <p className="bearing-hint">{names.map((name, i) => name ? `${String.fromCharCode(65 + i)}：${name}` : '').filter(Boolean).join('　')}</p>}
     {active && leader && points.length === 2 && (answers ? <div className="bearing-answers">
       <div className="bearing-answer-title">領袖答案（約） · {answers.zone}Q 方格北</div>
       <div className="bearing-answer-head"><span>基準</span><span>前視 A→B</span><span>後視 B→A</span></div>
@@ -33,7 +34,7 @@ export default function BearingCard({ points, active, leader, onReset, onFinish,
       <details className="bearing-details"><summary>兩點座標及磁差說明</summary><small>A {answers.pointA?.text}<br/>B {answers.pointB?.text}<br/>*WMM2025 按手機日期 {Number.isFinite(date.valueOf()) ? date.toLocaleDateString('zh-HK') : '無效'} 及海平面估算；請核對紙圖磁差，留意附近金屬及磁場。</small></details>
     </div> : <p className="bearing-warning">兩點須相距至少 10 米，並在香港 UTM 範圍內。</p>)}
     <div className="bearing-card-actions">
-      {!active && <button onClick={onResume}>調整方位線</button>}
+      {!active && <button onClick={onResume}>查看方位線</button>}
       <button onClick={onReset} disabled={!points.length}><RotateCcw size={13}/>{active ? '重設兩點' : '清除方位線'}</button>
       {active && <button onClick={onFinish}>完成</button>}
     </div>

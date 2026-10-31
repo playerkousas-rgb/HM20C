@@ -38,11 +38,11 @@ export default function LeaderContent({ active, onUnlock, onLock }) {
   }
   return <div className="leader-content">
     {active ? <>
-      <div className="leader-unlocked"><ShieldCheck size={21}/><div><strong>領袖模式已開啟</strong><span>可看圖心八位座標及兩點方位答案。</span></div></div>
+      <div className="leader-unlocked"><ShieldCheck size={21}/><div><strong>領袖模式已開啟</strong><span>可看八位座標、方位答案及設題分享。</span></div></div>
       <p className="modal-intro">離線時保持本頁開啟可繼續看答案；關頁或重新整理後，須連線重新解鎖。最多維持 8 小時。</p>
       <button className="secondary-button leader-lock-button" onClick={onLock}><LockKeyhole size={16}/> 返回成員模式</button>
     </> : <>
-      <p className="modal-intro">輸入領袖密碼，顯示圖心的八位方格座標和方位答案。首次解鎖需要網絡。</p>
+      <p className="modal-intro">輸入領袖密碼，顯示圖心八位方格座標、方位答案及領袖設題。首次解鎖需要網絡。</p>
       <form onSubmit={submit} className="leader-form">
         <label htmlFor="leader-password">領袖密碼</label>
         <input id="leader-password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} maxLength={256} required placeholder="請輸入密碼" />

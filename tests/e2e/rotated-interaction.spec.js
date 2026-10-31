@@ -26,7 +26,7 @@ async function nearestPath(page, selector, at) {
   }, { selector, at });
 }
 
-test('panning, changing direction and dragging keep vectors and coordinates aligned', async ({ page }) => {
+test('panning and changing direction keep vectors and coordinates aligned', async ({ page }) => {
   await page.route('**/mapapi.hkmapservice.gov.hk/**', (route) => route.fulfill({ contentType: 'image/svg+xml', body: blankTile }));
   await page.route('**/services3.arcgis.com/**', (route) => route.fulfill({ contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: fixture }));
   await page.goto('/');
@@ -57,27 +57,15 @@ test('panning, changing direction and dragging keep vectors and coordinates alig
   expect(await nearestPath(page, '.leaflet-contourLines-pane path', start)).toBeLessThan(3);
   expect(await nearestPath(page, '.leaflet-overlay-pane path[stroke="#a33555"]', start)).toBeLessThan(3);
 
-  await page.getByRole('button', { name: '開始繪畫路線' }).click();
-  await page.getByRole('button', { name: '直線路點', exact: true }).click();
-  start = await point(page.locator('.route-marker--start'));
-  await page.mouse.move(start.x, start.y);
-  await page.mouse.down();
-  await page.mouse.move(start.x + 35, start.y + 25, { steps: 10 });
-  await page.mouse.up();
-  await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('scout-trail-map.route.v1')).segments[0].points[0].lat)).not.toBe(lat);
-  const dragged = await point(page.locator('.route-marker--start'));
-  expect(Math.hypot(dragged.x - (start.x + 35), dragged.y - (start.y + 25))).toBeLessThan(2);
-  expect(await nearestPath(page, '.leaflet-overlay-pane path[stroke="#a33555"]', dragged)).toBeLessThan(3);
-
-  // Independently invert the screen rotation and Mercator projection for the
-  // 35x25 pixel drag. Tolerance allows Leaflet's pixel rounding at each end.
-  const actual = await page.evaluate(() => JSON.parse(localStorage.getItem('scout-trail-map.route.v1')).segments[0].points[0]);
-  const theta = -1.13 * Math.PI / 180;
-  const dx = 35 * Math.cos(theta) + 25 * Math.sin(theta);
-  const dy = -35 * Math.sin(theta) + 25 * Math.cos(theta);
-  const mercatorMetresPerPixel = (20000 / (1000 * (96 / 25.4))) / Math.cos(lat * Math.PI / 180);
-  const expectedLon = (x + dx * mercatorMetresPerPixel) / R * 180 / Math.PI;
-  const expectedLat = (2 * Math.atan(Math.exp((y - dy * mercatorMetresPerPixel) / R)) - Math.PI / 2) * 180 / Math.PI;
-  expect(Math.abs(actual.lat - expectedLat)).toBeLessThan(0.00006);
-  expect(Math.abs(actual.lon - expectedLon)).toBeLessThan(0.00006);
+  // A selected bearing cross is fixed; it cannot move the recorded route.
+  const routeBefore = await page.evaluate(() => localStorage.getItem('scout-trail-map.route.v1'));
+  await page.getByRole('button', { name: '兩點方位直線' }).click();
+  const tap = { x: box.x + 200, y: box.y + 220 };
+  await page.mouse.click(tap.x, tap.y);
+  const fixed = await point(page.locator('.bearing-marker-a'));
+  await page.mouse.move(fixed.x, fixed.y); await page.mouse.down();
+  await page.mouse.move(fixed.x + 35, fixed.y + 25, { steps: 10 }); await page.mouse.up();
+  const after = await point(page.locator('.bearing-marker-a'));
+  expect(Math.hypot(after.x - fixed.x, after.y - fixed.y)).toBeLessThan(1);
+  expect(await page.evaluate(() => localStorage.getItem('scout-trail-map.route.v1'))).toBe(routeBefore);
 });

@@ -3,6 +3,7 @@ import { deflateSync } from 'node:zlib';
 import { writeArrayBuffer } from 'geotiff';
 import { BlobReader, BlobWriter, ZipWriter } from '@zip.js/zip.js';
 import { project, sheetGridBounds } from '../../src/sheets/geometry.js';
+import { exerciseUrl } from '../../src/lib/exercise';
 
 // Intentionally synthetic gradient images: they are NOT real or usable maps.
 async function syntheticSheet(id = 'T8', blue = 91, fraction = 1) {
@@ -139,11 +140,10 @@ test('synthetic local TIFF renders georeferenced tiles and route, survives offli
     expect(Math.abs(sample.pixel[1] - expectedG)).toBeLessThan(3);
     expect(sample.pixel[2]).toBe(91);
   }
-  await page.getByRole('button', { name: '開始繪畫路線' }).click();
-  await page.getByRole('button', { name: '直線路點', exact: true }).click();
-  await page.locator('.map-canvas').click({ position: { x: 150, y: 210 } });
+  const centre = await page.evaluate(() => JSON.parse(localStorage.getItem('scout-trail-map.map-centre.v1')));
+  const routeXml = `<gpx xmlns="http://www.topografix.com/GPX/1/1"><trk><trkseg><trkpt lat="${centre.lat}" lon="${centre.lon}"/></trkseg></trk></gpx>`;
+  await page.locator('input[type=file]').setInputFiles({ name: 'sheet-route.gpx', mimeType: 'application/gpx+xml', buffer: Buffer.from(routeXml) });
   await expect(page.locator('.stat').nth(1)).toContainText('1 點');
-  await page.getByRole('button', { name: '完成繪畫' }).click();
   await expect(page.getByRole('button', { name: /比例已鎖定/ })).toContainText('20,000');
   const beforeReload = await page.locator('.map-coordinates').innerText();
   // Only the selected TIFF and application shell are needed after reopening.
@@ -164,9 +164,14 @@ test('synthetic local TIFF renders georeferenced tiles and route, survives offli
   await page.getByRole('button', { name: '地形圖', exact: true }).click();
   await expect(page.locator('.source-pill')).toContainText('T8 本機試用');
   await expect(page.locator('canvas.sheet-raster-tile.leaflet-tile-loaded').first()).toBeVisible({ timeout: 30_000 });
-  await page.getByRole('button', { name: '選擇地區與書籤' }).click();
-  await page.getByRole('button', { name: /大帽山/ }).click();
+  // A received exercise outside the active local sheet must not silently mix in online tiles.
+  const outside = exerciseUrl({ kind: 'points', title: '範圍外', description: '', points: [{ lat: 22.438, lon: 114.16, name: '遠方地點' }] }, 'http://127.0.0.1:5177/');
+  await page.evaluate((url) => { location.hash = new URL(url).hash; }, outside);
   await expect(page.locator('.map-error')).toContainText('圖心已離開 T8 圖幅');
+  await expect(page.locator('.source-pill')).toContainText('T8 本機試用 · 已離開範圍');
+  await expect(page.locator('.leaflet-placeLabels-pane .leaflet-tile')).toHaveCount(0);
+  await expect(page.locator('.leaflet-contourLines-pane path')).toHaveCount(0);
+  expect(providers).toEqual([]);
   await openSheetPanel(page);
   await page.getByRole('button', { name: '查看 T8', exact: true }).click();
   await expect(page.locator('.map-error')).toHaveCount(0);

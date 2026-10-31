@@ -90,14 +90,13 @@ test('rotates tiles, labels and contours together; clicks and points remain geor
   expect(Math.abs((north.y - start.y) + projectedPixels * Math.cos(theta))).toBeLessThan(1.5);
   expect(await contourDistanceTo(page, start)).toBeLessThan(3);
 
-  await page.getByRole('button', { name: '開始繪畫路線' }).click();
-  await page.getByRole('button', { name: '直線路點', exact: true }).click();
+  await page.getByRole('button', { name: '兩點方位直線' }).click();
   const map = page.locator('.map-canvas');
   const box = await map.boundingBox();
   const tap = { x: box.x + 275, y: box.y + 265 };
   await page.mouse.click(tap.x, tap.y);
-  await expect(page.locator('.route-marker--end')).toHaveCount(1);
-  const added = await centreOf(page.locator('.route-marker--end'));
+  await expect(page.locator('.bearing-marker-a')).toHaveCount(1);
+  const added = await centreOf(page.locator('.bearing-marker-a'));
   expect(Math.hypot(added.x - tap.x, added.y - tap.y)).toBeLessThan(2);
 });
 
@@ -142,13 +141,12 @@ test('touch tap under rotated view adds a point at the touched location', async 
   await mockMaps(page);
   await page.goto('/');
   await expect(page.locator('.source-pill')).toContainText('iB20000');
-  await page.getByRole('button', { name: '開始繪畫路線' }).click();
-  await page.getByRole('button', { name: '直線路點', exact: true }).click();
+  await page.getByRole('button', { name: '兩點方位直線' }).click();
   const box = await page.locator('.map-canvas').boundingBox();
   const target = { x: Math.round(box.x + 240), y: Math.round(box.y + 250) };
   await page.touchscreen.tap(target.x, target.y);
-  await expect(page.locator('.route-marker--start')).toHaveCount(1);
-  const actual = await centreOf(page.locator('.route-marker--start'));
+  await expect(page.locator('.bearing-marker-a')).toHaveCount(1);
+  const actual = await centreOf(page.locator('.bearing-marker-a'));
   expect(Math.hypot(actual.x - target.x, actual.y - target.y)).toBeLessThan(2);
   await context.close();
 });

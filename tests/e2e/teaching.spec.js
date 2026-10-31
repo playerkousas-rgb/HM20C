@@ -85,7 +85,7 @@ test('UTM kilometre lines pass through the real projected intersection, rotate w
   await expect(page.getByRole('button', { name: '顯示 UTM 網格線' })).toHaveAttribute('aria-pressed', 'false');
 });
 
-test('member gets an extended A/B line without numeric answers; leader can see and drag live answers', async ({ page }) => {
+test('member gets a fixed extended A/B line without numeric answers; leader can see answers', async ({ page }) => {
   await mockMaps(page); await ready(page);
   const routeBefore = await page.evaluate(() => localStorage.getItem('scout-trail-map.route.v1'));
   await page.getByRole('button', { name: '兩點方位直線' }).click();
@@ -131,10 +131,10 @@ test('member gets an extended A/B line without numeric answers; leader can see a
   const textBefore = await answers.innerText();
   await page.mouse.move(actualB.x, actualB.y); await page.mouse.down();
   await page.mouse.move(actualB.x - 30, actualB.y + 20, { steps: 8 }); await page.mouse.up();
-  await expect(answers).not.toHaveText(textBefore);
-  const moved = await center(page.locator('.bearing-marker-b'));
-  expect(Math.hypot(moved.x - (actualB.x - 30), moved.y - (actualB.y + 20))).toBeLessThan(2);
-  expect(await nearestPath(page, '.bearing-extension', moved)).toBeLessThan(3);
+  expect(await answers.innerText()).toBe(textBefore);
+  const fixed = await center(page.locator('.bearing-marker-b'));
+  expect(Math.hypot(fixed.x - actualB.x, fixed.y - actualB.y)).toBeLessThan(1);
+  expect(await nearestPath(page, '.bearing-extension', fixed)).toBeLessThan(3);
   await page.getByRole('button', { name: '領袖模式已開啟' }).click();
   await page.getByRole('button', { name: '返回成員模式' }).click();
   await expect(page.locator('.bearing-answers')).toHaveCount(0);
@@ -180,7 +180,7 @@ test('magnet commits BRouter geometry, continues in separate strokes, exports GP
   });
   await ready(page);
   await page.getByRole('button', { name: '開始繪畫路線' }).click();
-  await expect(page.getByRole('button', { name: '沿徑磁石' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: '直線路點' })).toHaveCount(0);
   await expect(page.locator('.draw-mode-hint')).toContainText('BRouter');
   await stroke(page, [[130, 160], [170, 190], [220, 180], [250, 220]]);
   await expect(page.locator('.routing-status')).toContainText('已貼上路網');
@@ -189,11 +189,24 @@ test('magnet commits BRouter geometry, continues in separate strokes, exports GP
   expect(route.segments).toHaveLength(1);
   expect(route.segments[0].kind).toBe('snap');
   expect(route.segments[0].points.length).toBeGreaterThan(2);
+  await expect(page.locator('.route-marker--start')).toHaveText('起');
+  await expect(page.locator('.route-marker--end')).toHaveText('終');
+  await expect(page.locator('.route-marker--via')).toHaveCount(0);
   const firstEnd = route.segments[0].points.at(-1);
   await stroke(page, [[250, 220], [220, 260], [200, 300]]);
   await expect.poll(async () => (await page.evaluate(() => JSON.parse(localStorage.getItem('scout-trail-map.route.v1')))).segments.length).toBe(2);
   route = await page.evaluate(() => JSON.parse(localStorage.getItem('scout-trail-map.route.v1')));
   expect(route.segments[1].points[0]).toEqual(firstEnd);
+  await expect(page.locator('.route-marker--start')).toHaveCount(1);
+  await expect(page.locator('.route-marker--via')).toHaveText(['1']);
+  await expect(page.locator('.route-marker--end')).toHaveCount(1);
+  await stroke(page, [[200, 300], [170, 335], [145, 360]]);
+  await expect.poll(async () => (await page.evaluate(() => JSON.parse(localStorage.getItem('scout-trail-map.route.v1')))).segments.length).toBe(3);
+  await expect(page.locator('.route-marker--via')).toHaveText(['1', '2']);
+  await expect(page.locator('.route-marker--start')).toHaveCount(1);
+  await expect(page.locator('.route-marker--end')).toHaveCount(1);
+  await page.getByRole('button', { name: '撤回上一步' }).click();
+  await expect(page.locator('.route-marker--via')).toHaveText(['1']);
   await page.getByRole('button', { name: '撤回上一步' }).click();
   await expect.poll(async () => (await page.evaluate(() => JSON.parse(localStorage.getItem('scout-trail-map.route.v1')))).segments.length).toBe(1);
   await page.getByRole('button', { name: '完成繪畫' }).click();

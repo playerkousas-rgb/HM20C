@@ -341,7 +341,7 @@ a { color: inherit; }
   .map-credit img { width: 58px; max-height: 16px; }
   .map-coordinates { right: 12px; bottom: 45px; padding: 5px 6px; font-size: 8px; }
   .map-coordinates span { display: inline; margin-right: 3px; }
-  .mobile-nav { flex: 0 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid #edf1eb; background: #fff; padding: 6px 8px max(6px, env(safe-area-inset-bottom)); }
+  .mobile-nav { flex: 0 0 auto; display: grid; grid-template-columns: repeat(5, 1fr); border-top: 1px solid #edf1eb; background: #fff; padding: 6px 8px max(6px, env(safe-area-inset-bottom)); }
   .mobile-nav button { border: 0; background: transparent; color: #9eaca1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 44px; font-size: 9px; font-weight: 650; }
   .mobile-nav button.active { color: #285c43; }
   .toast { bottom: calc(74px + env(safe-area-inset-bottom)); font-size: 11px; }
@@ -497,3 +497,71 @@ a { color: inherit; }
 .bearing-details small { margin-top: 4px; }
 .bearing-heading-actions { display: flex; gap: 5px; }
 .bearing-heading-actions button { display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 6px; color: #668670; background: #f0f5ed; }
+
+/* Exercise overlays are independent from the route and GPX layers. */
+.route-marker--via span { background: #a33555; }
+.resection-landmark, .resection-handle, .exercise-marker { background: transparent; border: 0; }
+.resection-landmark > span { --landmark-color: #276c51; position: relative; display: block; width: 32px; height: 32px; }
+.resection-landmark > span::before, .resection-landmark > span::after { content: ''; position: absolute; display: block; background: var(--landmark-color); box-shadow: 0 0 0 1.4px #fff; }
+.resection-landmark > span::before { left: 2px; top: 15px; width: 28px; height: 2px; }
+.resection-landmark > span::after { left: 15px; top: 2px; width: 2px; height: 28px; }
+.resection-landmark i { position: absolute; left: 13px; top: 13px; width: 6px; height: 6px; border-radius: 50%; background: var(--landmark-color); border: 1px solid white; z-index: 2; }
+.resection-landmark b { position: absolute; left: 24px; top: 0; padding: 0 4px; background: var(--landmark-color); color: white; border-radius: 4px; font: 800 10px/15px system-ui, sans-serif; }
+.resection-handle > span { display: grid; place-items: center; width: 36px; height: 36px; border: 3px solid white; border-radius: 50%; background: var(--landmark-color); color: white; font: 700 20px/1 system-ui, sans-serif; box-shadow: 0 2px 8px #223b3259; touch-action: none; cursor: grab; }
+.resection-handle.leaflet-drag-target > span { cursor: grabbing; }
+.exercise-name-label { border: 1px solid #dde8d9; background: rgba(255,255,251,.94); color: #355c45; border-radius: 6px; box-shadow: 0 2px 6px #263d2c22; font: 700 10px/1.3 inherit; padding: 3px 5px; pointer-events: none; }
+.exercise-marker > span { position: relative; display: block; width: 28px; height: 28px; }
+.exercise-marker b { display: grid; place-items: center; width: 28px; height: 28px; border: 2px solid white; border-radius: 50%; background: #335f88; color: white; font: 800 11px/1 system-ui, sans-serif; box-shadow: 0 2px 7px #1c344933; }
+.exercise-marker small { position: absolute; left: 30px; top: 4px; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 1px solid #dce7dd; border-radius: 5px; padding: 2px 5px; background: rgba(255,255,251,.96); color: #345b47; font-size: 10px; font-weight: 700; }
+.resection-card { width: min(315px, calc(100% - 82px)); }
+.resection-reference { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin: 9px 0 4px; color: #67806d; font-size: 10px; font-weight: 700; }
+.resection-reference select { max-width: 150px; padding: 5px; border: 1px solid #dbe7d9; border-radius: 6px; background: white; color: #3e644a; font-size: 11px; }
+.resection-angle { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 4px 0; border-bottom: 1px solid #edf2eb; }
+.resection-angle label { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0; font-size: 10px; color: #516d58; }
+.resection-angle label b { display: grid; place-items: center; flex: none; width: 24px; height: 24px; border-radius: 6px; color: white; background: #276c51; }
+.resection-angle-b label b { background: #bd753b; } .resection-angle-c label b { background: #795b9a; }
+.resection-angle label span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resection-angle label small { display: block; color: #99aa9b; font-size: 9px; }
+.resection-angle > span { display: flex; align-items: center; gap: 3px; color: #5c7a62; font-size: 11px; }
+.resection-angle input { width: 67px; min-height: 32px; padding: 4px; border: 1px solid #dbe7d9; border-radius: 6px; color: #305c40; background: white; font-size: 14px; }
+.resection-input-error { flex-basis: 100%; color: #a34e3c; }
+.resection-note, .resection-details { margin: 7px 0 0; color: #7b907e; font-size: 10px; line-height: 1.55; }
+.resection-details summary { cursor: pointer; color: #53775c; font-weight: 700; }
+.resection-details p { margin: 6px 0; }
+.exercise-mark-card { width: min(360px, calc(100% - 24px)); }
+.exercise-mark-card .bearing-card-actions { flex-wrap: wrap; justify-content: flex-start; }
+.exercise-content .modal-option-list { margin-bottom: 14px; }
+.exercise-current { padding: 13px; border: 1px solid #dceadd; border-radius: 11px; background: #f7faf4; color: #55715d; }
+.exercise-current-heading { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.exercise-current-heading strong { color: #31583f; font-size: 13px; overflow-wrap: anywhere; }
+.exercise-current-heading span { flex: none; padding: 3px 7px; border-radius: 6px; background: #e5f0e2; font-size: 10px; }
+.exercise-current p { margin: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; line-height: 1.6; }
+.exercise-current ol { list-style: none; padding: 0; margin: 8px 0; }
+.exercise-current li button { display: flex; gap: 7px; align-items: center; width: 100%; border: 0; border-bottom: 1px solid #e6eee3; padding: 7px 1px; background: transparent; color: #4d7058; text-align: left; font-size: 11px; }
+.exercise-current li b { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; color: white; background: #577d63; }
+.exercise-current li button span { margin-left: auto; color: #8ba08e; font-size: 10px; white-space: nowrap; }
+.exercise-current-actions, .exercise-share-actions, .exercise-scan-actions { display: flex; gap: 7px; flex-wrap: wrap; }
+.exercise-current-actions button, .exercise-share-actions button, .exercise-share-actions a, .exercise-editor-heading button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 36px; padding: 7px 10px; border: 1px solid #d8e7d6; border-radius: 7px; background: white; color: #4e7559; text-decoration: none; font-size: 11px; font-weight: 700; }
+.exercise-editor > label { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; color: #55715e; font-size: 11px; font-weight: 700; }
+.exercise-editor > label small { color: #9aab9d; font-weight: 500; }
+.exercise-editor input, .exercise-editor select, .exercise-editor textarea, .exercise-qr textarea { width: 100%; min-height: 42px; padding: 9px; border: 1px solid #dce7dc; border-radius: 8px; color: #31523c; background: white; font-size: 16px; }
+.exercise-editor textarea, .exercise-qr textarea { resize: vertical; line-height: 1.5; }
+.exercise-editor-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 15px 0 8px; color: #44664d; font-size: 12px; }
+.exercise-editor .exercise-name { flex-direction: row; align-items: center; gap: 8px; margin: 6px 0; }
+.exercise-name b { display: grid; place-items: center; flex: 0 0 27px; height: 27px; border-radius: 7px; background: #e8f1e4; color: #477057; }
+.exercise-subtle { color: #95a799; font-size: 10px; line-height: 1.5; }
+.exercise-message { color: #956548; font-size: 11px; line-height: 1.5; }
+.exercise-new { display: block; margin: 12px auto 0; border: 0; background: transparent; color: #78917c; text-decoration: underline; font-size: 11px; }
+.exercise-reset-confirm { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 10px; color: #996e4b; font-size: 11px; }
+.exercise-reset-confirm button { padding: 6px 9px; border: 1px solid #e6dfd0; border-radius: 6px; color: #8c694f; background: #fffaf2; }
+.exercise-qr { display: flex; flex-direction: column; align-items: center; gap: 9px; margin-top: 18px; padding: 15px 12px; border: 1px solid #dceadb; border-radius: 12px; background: #f5f9f2; text-align: center; color: #6f8874; font-size: 11px; line-height: 1.6; }
+.exercise-qr strong { color: #315a40; font-size: 13px; }
+.exercise-qr img { display: block; width: min(100%, 320px); height: auto; background: white; image-rendering: pixelated; }
+.exercise-qr details { width: 100%; overflow: hidden; text-align: left; }
+.exercise-qr details summary { cursor: pointer; color: #52785c; }
+.exercise-qr textarea { margin-top: 7px; font: 10px/1.5 ui-monospace, monospace; overflow-wrap: anywhere; }
+.exercise-qr p { margin: 0; color: #987e63; }
+.exercise-scanner video { display: none; width: 100%; max-height: 280px; object-fit: contain; border-radius: 10px; background: #172d22; }
+.exercise-scanner video.is-scanning { display: block; margin: 0 0 12px; }
+.exercise-scan-actions > * { flex: 1; min-width: 125px; }
+@media (max-width: 700px) { .header-exercise { display: none; } .resection-card { max-height: calc(100% - 138px); } }

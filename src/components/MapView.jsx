@@ -7,9 +7,12 @@ import { createContourOverlay } from '../map/contours';
 import { QueuedTileLayer } from '../map/tileLayer';
 import { createUtmLayer } from '../map/utmLayer';
 import { createBearingLayer } from '../map/bearingLayer';
+import { createResectionLayer } from '../map/resectionLayer';
+import { createExerciseLayer } from '../map/exerciseLayer';
+import { routeMarkers } from '../lib/routeMarkers';
 import { inspectTiff } from '../sheets/files';
 import { createSheetLayer } from '../sheets/rasterLayer';
-import { allRoutePoints, DEFAULT_PX_PER_MM, distanceMeters, metersPerPixel, routePointCount, zoomForScale } from '../lib/geo';
+import { allRoutePoints, DEFAULT_PX_PER_MM, distanceMeters, metersPerPixel, zoomForScale } from '../lib/geo';
 
 const LANDSD_API = 'https://mapapi.hkmapservice.gov.hk/gs/api/v1.0.0/xyz';
 const START = [22.3835, 114.3225];
@@ -52,6 +55,8 @@ const MapView = forwardRef(function MapView(props, ref) {
   const routeLayerRef = useRef(null);
   const gridLayerRef = useRef(null);
   const bearingLayerRef = useRef(null);
+  const resectionLayerRef = useRef(null);
+  const exerciseLayerRef = useRef(null);
   const current = useRef(props);
   current.current = props;
 
@@ -140,7 +145,9 @@ const MapView = forwardRef(function MapView(props, ref) {
     gridLayerRef.current = createUtmLayer(map);
     gridLayerRef.current.setEnabled(current.current.gridVisible);
     routeLayerRef.current = L.layerGroup().addTo(map);
-    bearingLayerRef.current = createBearingLayer(map, () => ({ ...current.current, isAvailableBearingPoint: isAvailablePosition }));
+    bearingLayerRef.current = createBearingLayer(map);
+    resectionLayerRef.current = createResectionLayer(map, () => current.current);
+    exerciseLayerRef.current = createExerciseLayer(map);
 
     function updateView() {
       const centre = map.getCenter();
@@ -166,11 +173,12 @@ const MapView = forwardRef(function MapView(props, ref) {
       });
     });
     map.on('click', (event) => {
-      if (current.current.bearingActive || (current.current.editing && current.current.drawMode === 'straight')) {
+      if (current.current.bearingActive || current.current.resectionActive || current.current.exerciseMarking) {
         if (!isAvailablePosition(event.latlng)) { current.current.onMapWarning('所選位置不在本機圖幅內；請先切換圖幅。'); return; }
         const point = { lat: event.latlng.lat, lon: event.latlng.lng };
-        if (current.current.bearingActive) current.current.onAddBearingPoint(point);
-        else current.current.onAddPoint(point);
+        if (current.current.exerciseMarking) current.current.onAddExercisePoint(point);
+        else if (current.current.resectionActive) current.current.onAddResectionPoint(point);
+        else current.current.onAddBearingPoint(point);
       }
     });
     updateView();
@@ -183,6 +191,8 @@ const MapView = forwardRef(function MapView(props, ref) {
       if (centreFrame !== null) cancelAnimationFrame(centreFrame);
       gridLayerRef.current?.destroy();
       bearingLayerRef.current?.destroy();
+      resectionLayerRef.current?.destroy();
+      exerciseLayerRef.current?.destroy();
       contour.setEnabled(false);
       map.remove();
       mapRef.current = null;
@@ -294,8 +304,16 @@ const MapView = forwardRef(function MapView(props, ref) {
   }, [props.gridVisible]);
 
   useEffect(() => {
-    bearingLayerRef.current?.render(props.bearingPoints, props.bearingActive);
-  }, [props.bearingPoints, props.bearingActive]);
+    bearingLayerRef.current?.render(props.visibleTool === 'bearing' ? props.bearingPoints : []);
+  }, [props.bearingPoints, props.visibleTool]);
+
+  useEffect(() => {
+    resectionLayerRef.current?.render(props.visibleTool === 'resection' ? props.resectionPoints : [], props.resectionActive);
+  }, [props.resectionPoints, props.resectionActive, props.visibleTool]);
+
+  useEffect(() => {
+    exerciseLayerRef.current?.render(props.exercisePoints);
+  }, [props.exercisePoints]);
 
   useEffect(() => {
     if (!props.leaderActive || !mapRef.current) return;
@@ -307,7 +325,7 @@ const MapView = forwardRef(function MapView(props, ref) {
   // route after BRouter returns valid network geometry, never as a fallback.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !props.editing || props.drawMode !== 'magnet') return undefined;
+    if (!map || !props.editing) return undefined;
     const element = map.getContainer();
     let active = null; let preview = null; let exceeded = false;
     map.dragging.disable();
@@ -362,62 +380,33 @@ const MapView = forwardRef(function MapView(props, ref) {
       preview?.remove();
       map.dragging.enable();
     };
-  }, [props.editing, props.drawMode]);
+  }, [props.editing]);
 
   useEffect(() => {
     const layer = routeLayerRef.current;
     if (!layer) return;
     layer.clearLayers();
-    const count = routePointCount(props.route);
-    const canEditAll = props.editing && props.drawMode === 'straight' && count <= 150;
-    let number = 0;
-    for (let segmentIndex = 0; segmentIndex < props.route.segments.length; segmentIndex += 1) {
-      const segment = props.route.segments[segmentIndex];
+    for (const segment of props.route.segments) {
       const positions = segment.points.map((point) => [point.lat, point.lon]);
       if (positions.length > 1) {
         L.polyline(positions, { color: '#fffdf5', weight: 8, opacity: 0.95, interactive: false, lineJoin: 'round' }).addTo(layer);
         L.polyline(positions, { color: '#a33555', weight: 4, opacity: 1, interactive: false, lineJoin: 'round' }).addTo(layer);
       }
-      const canEditSegment = canEditAll && segment.kind !== 'snap';
-      segment.points.forEach((point, pointIndex) => {
-        number += 1;
-        const start = pointIndex === 0;
-        const end = pointIndex === segment.points.length - 1 && !start;
-        if (!canEditSegment && !start && !end) return;
-        const type = start ? 'start' : end ? 'end' : 'small';
-        const marker = L.marker([point.lat, point.lon], {
-          icon: nodeIcon(type, start ? '起' : end ? '終' : ''),
-          draggable: canEditSegment,
-          keyboard: canEditSegment,
-          title: canEditSegment ? `拖動調整第 ${number} 個路點` : (start ? '路段起點' : '路段終點'),
-          bubblingMouseEvents: false,
-        }).addTo(layer);
-        if (canEditSegment) marker.on('dragend', () => {
-          const position = marker.getLatLng();
-          if (!isAvailablePosition(position)) { marker.setLatLng([point.lat, point.lon]); current.current.onMapWarning('路點不可移到本機圖幅以外。'); return; }
-          current.current.onMovePoint('segment', segmentIndex, pointIndex, position.lat, position.lng);
-        });
-      });
     }
+    routeMarkers(props.route).forEach(({ point, type, label }) => {
+      L.marker([point.lat, point.lon], { icon: nodeIcon(type, label), interactive: false, draggable: false,
+        title: type === 'start' ? '路線起點' : type === 'end' ? '路線終點' : `第 ${label} 個銜接點` }).addTo(layer);
+    });
     props.route.waypoints.forEach((point, index) => {
-      const marker = L.marker([point.lat, point.lon], {
-        icon: nodeIcon('waypoint', '◆'),
-        draggable: props.editing && props.drawMode === 'straight' && props.route.waypoints.length <= 150,
-        title: point.name || `航點 ${index + 1}`,
-        bubblingMouseEvents: false,
-      }).addTo(layer);
-      marker.on('dragend', () => {
-        const position = marker.getLatLng();
-        if (!isAvailablePosition(position)) { marker.setLatLng([point.lat, point.lon]); current.current.onMapWarning('航點不可移到本機圖幅以外。'); return; }
-        current.current.onMovePoint('waypoint', index, 0, position.lat, position.lng);
-      });
+      L.marker([point.lat, point.lon], { icon: nodeIcon('waypoint', '◆'), interactive: false, draggable: false,
+        title: point.name || `航點 ${index + 1}` }).addTo(layer);
     });
     contourRef.current?.setAvoidProvider(() => allRoutePoints(props.route).slice(0, 150).map((point) => ({ lat: point.lat, lng: point.lon, r: 12 })));
     contourRef.current?.refreshLabels();
-  }, [props.route, props.editing, props.drawMode]);
+  }, [props.route]);
 
 
-  return <div className={`map-canvas ${props.editing ? 'is-drawing' : ''} ${props.editing && props.drawMode === 'magnet' ? 'is-magnet-drawing' : ''} ${props.bearingActive ? 'is-bearing' : ''}`} ref={container} aria-label="遠足地圖" data-rotation={props.rotation} />;
+  return <div className={`map-canvas ${props.editing ? 'is-drawing is-magnet-drawing' : ''} ${(props.bearingActive || props.resectionActive || props.exerciseMarking) ? 'is-bearing' : ''}`} ref={container} aria-label="遠足地圖" data-rotation={props.rotation} />;
 });
 
 export default MapView;

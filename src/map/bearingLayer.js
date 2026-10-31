@@ -21,11 +21,11 @@ export function bearingIcon(label) {
     iconSize: [38, 38], iconAnchor: [19, 19],
   });
 }
-export function createBearingLayer(map, getCurrent) {
+export function createBearingLayer(map) {
   const group = L.layerGroup().addTo(map);
   const halo = L.polyline([], { color: '#fffcf2', weight: 7, opacity: 0.95, interactive: false, className: 'bearing-halo' }).addTo(group);
   const line = L.polyline([], { color: '#315e4d', weight: 2.5, opacity: 1, interactive: false, className: 'bearing-extension' }).addTo(group);
-  let markers = []; let dragging = false;
+  let markers = [];
   function updateLine() {
     if (markers.length !== 2) { halo.setLatLngs([]); line.setLatLngs([]); return; }
     const a = map.latLngToContainerPoint(markers[0].getLatLng());
@@ -34,31 +34,19 @@ export function createBearingLayer(map, getCurrent) {
     const latlngs = endpoints ? endpoints.map((point) => map.containerPointToLatLng(point)) : [];
     halo.setLatLngs(latlngs); line.setLatLngs(latlngs);
   }
-  function render(points, editable) {
-    if (dragging) return;
+  function render(points) {
     for (const marker of markers) group.removeLayer(marker);
     markers = points.map((point, index) => {
       const label = index === 0 ? 'A' : 'B';
       const marker = L.marker([point.lat, point.lon], {
-        icon: bearingIcon(label), draggable: editable, keyboard: editable,
-        title: editable ? `拖動方位點 ${label}` : `方位點 ${label}`,
-        bubblingMouseEvents: false, zIndexOffset: 1000,
+        icon: bearingIcon(label), draggable: false, keyboard: false,
+        title: `方位點 ${label}（固定）`, bubblingMouseEvents: false, zIndexOffset: 1000,
       }).addTo(group);
-      if (editable) {
-        marker.on('dragstart', () => { dragging = true; });
-        marker.on('drag', () => {
-          updateLine(); const value = marker.getLatLng();
-          getCurrent().onMoveBearingPoint(index, value.lat, value.lng, false);
-        });
-        marker.on('dragend', () => {
-          dragging = false; const value = marker.getLatLng();
-          if (!getCurrent().isAvailableBearingPoint(value)) {
-            marker.setLatLng([point.lat, point.lon]);
-            getCurrent().onMoveBearingPoint(index, point.lat, point.lon, true);
-            getCurrent().onMapWarning('方位點不可移到本機圖幅以外。');
-          } else getCurrent().onMoveBearingPoint(index, value.lat, value.lng, true);
-          updateLine();
-        });
+      // Grabbing the cross should neither move the point nor drag the map.
+      L.DomEvent.disableClickPropagation(marker.getElement());
+      if (point.name) {
+        const name = document.createElement('span'); name.textContent = point.name;
+        marker.bindTooltip(name, { permanent: true, direction: 'bottom', offset: [0, 12], className: 'exercise-name-label' }).openTooltip();
       }
       return marker;
     });

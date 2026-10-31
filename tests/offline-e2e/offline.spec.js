@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/test';
+import QRCode from 'qrcode';
+import { exerciseUrl } from '../../src/lib/exercise';
 
 // These are deliberately synthetic fixtures, not real navigable map data.
 const tile = '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="#e7e8d6"/></svg>';
@@ -59,17 +61,14 @@ test('production shell, rotated government tiles, labels, paginated contours and
   await mockProviders(context, state);
   await page.goto('/');
   await expect(page.locator('.source-pill')).toContainText('iB20000 等高距');
-  await page.getByRole('button', { name: '開始繪畫路線' }).click();
-  await page.getByRole('button', { name: '直線路點', exact: true }).click();
-  await page.locator('.map-canvas').click({ position: { x: 150, y: 220 } });
-  await page.locator('.map-canvas').click({ position: { x: 225, y: 300 } });
-  await page.getByRole('button', { name: '完成繪畫' }).click();
+  const xml = '<gpx xmlns="http://www.topografix.com/GPX/1/1"><trk><trkseg><trkpt lat="22.3835" lon="114.3225"/><trkpt lat="22.384" lon="114.323"/></trkseg></trk></gpx>';
+  await page.locator('input[type=file]').setInputFiles({ name: 'offline.gpx', mimeType: 'application/gpx+xml', buffer: Buffer.from(xml) });
   await expect(page.locator('.stat').nth(1)).toContainText('2 點');
   const center = await page.locator('.map-coordinates').innerText();
   await page.getByRole('button', { name: '選擇地區與書籤' }).click();
   await page.getByLabel('書籤名稱').fill('已預載圖心');
   await page.getByRole('button', { name: '儲存圖心' }).click();
-  await expect(page.getByRole('status')).toContainText('書籤不包含地圖資料');
+  await expect(page.locator('.bookmark-message')).toContainText('書籤不包含地圖資料');
   await page.getByRole('button', { name: '關閉' }).click();
   await startDownload(page);
   await expect(page.locator('.offline-plan')).toContainText('底圖、中文地名及 20 米等高線');
@@ -160,10 +159,8 @@ test('opaque countryside tiles use a fallback, reload offline separately, and cl
   });
   await page.goto('/');
   await page.getByRole('button', { name: '郊遊圖', exact: true }).click();
-  await page.getByRole('button', { name: '開始繪畫路線' }).click();
-  await page.getByRole('button', { name: '直線路點', exact: true }).click();
-  await page.locator('.map-canvas').click({ position: { x: 150, y: 220 } });
-  await page.getByRole('button', { name: '完成繪畫' }).click();
+  const xml = '<gpx xmlns="http://www.topografix.com/GPX/1/1"><trk><trkseg><trkpt lat="22.3835" lon="114.3225"/></trkseg></trk></gpx>';
+  await page.locator('input[type=file]').setInputFiles({ name: 'offline.gpx', mimeType: 'application/gpx+xml', buffer: Buffer.from(xml) });
   await page.getByRole('button', { name: '選擇地區與書籤' }).click();
   await page.getByLabel('書籤名稱').fill('獨立書籤');
   await page.getByRole('button', { name: '儲存圖心' }).click();
@@ -354,4 +351,45 @@ test('leader answers remain available in an unlocked tab offline, but reload doe
     return false;
   });
   expect(cachedLeader).toBe(false);
+});
+
+
+test('a cached production app reads a QR image offline and restores its landmarks without uploading the question', async ({ page, context }) => {
+  const state = {}; await mockProviders(context, state); await page.goto('/');
+  await expect(page.locator('.source-pill')).toContainText('iB20000');
+  await expect.poll(() => page.evaluate(async () => Boolean((await navigator.serviceWorker.getRegistration())?.active))).toBe(true);
+  await startDownload(page); await finishDownload(page);
+  await page.getByRole('button', { name: '關閉' }).click();
+  const task = { kind: 'points', title: '離線集合點', description: '紙圖練習', points: [
+    { lat: 22.3835, lon: 114.3225, name: '集合點' }, { lat: 22.384, lon: 114.3235, name: '檢查點' },
+  ] };
+  const url = exerciseUrl(task, 'http://127.0.0.1:5177/');
+  const png = await QRCode.toBuffer(url, { width: 450, margin: 4 });
+  const requests = [];
+  page.on('request', (request) => { if (['POST', 'PUT', 'PATCH'].includes(request.method())) requests.push(request.url()); });
+  state.offline = true; await context.setOffline(true); await page.reload();
+  await expect(page.locator('.offline-indicator')).toContainText('離線');
+  await expect(page.locator('.map-error')).toHaveCount(0);
+  await page.getByRole('button', { name: '題目', exact: true }).click();
+  await page.getByRole('button', { name: /讀取題目 QR Code/ }).click();
+  await page.getByLabel('選擇題目 QR 圖片').setInputFiles({ name: 'offline.png', mimeType: 'image/png', buffer: png });
+  await expect(page.locator('.exercise-marker')).toHaveCount(2);
+  await expect(page.locator('.exercise-marker small')).toHaveText(['集合點', '檢查點']);
+  await page.reload();
+  await expect(page.locator('.exercise-marker')).toHaveCount(2);
+  await expect(page.locator('.map-error')).toHaveCount(0);
+  // A valid question can be outside the saved screen; never imply the map exists there.
+  const farTask = { kind: 'points', title: '其他地區', description: '', points: [{ lat: 22.438, lon: 114.16, name: '遠方地點' }] };
+  const farPng = await QRCode.toBuffer(exerciseUrl(farTask, 'http://127.0.0.1:5177/'), { width: 450, margin: 4 });
+  await page.getByRole('button', { name: '題目', exact: true }).click();
+  await page.getByRole('button', { name: /讀取題目 QR Code/ }).click();
+  await page.getByLabel('選擇題目 QR 圖片').setInputFiles({ name: 'far.png', mimeType: 'image/png', buffer: farPng });
+  await expect(page.getByRole('dialog')).toContainText('取代目前的題目');
+  await page.getByRole('dialog').getByRole('button', { name: '讀取題目', exact: true }).click();
+  await expect(page.locator('.exercise-marker small')).toHaveText(['遠方地點']);
+  await expect(page.locator('.map-error')).toContainText('不能作導航');
+  await expect(page.locator('.offline-indicator')).toContainText('離線 · 只顯示已存範圍');
+  await expect(page.getByRole('button', { name: '地形圖', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.source-pill')).toContainText('等高線未能載入');
+  expect(requests).toEqual([]);
 });

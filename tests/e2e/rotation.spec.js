@@ -91,6 +91,7 @@ test('rotates tiles, labels and contours together; clicks and points remain geor
   expect(await contourDistanceTo(page, start)).toBeLessThan(3);
 
   await page.getByRole('button', { name: '開始繪畫路線' }).click();
+  await page.getByRole('button', { name: '直線路點', exact: true }).click();
   const map = page.locator('.map-canvas');
   const box = await map.boundingBox();
   const tap = { x: box.x + 275, y: box.y + 265 };
@@ -142,6 +143,7 @@ test('touch tap under rotated view adds a point at the touched location', async 
   await page.goto('/');
   await expect(page.locator('.source-pill')).toContainText('iB20000');
   await page.getByRole('button', { name: '開始繪畫路線' }).click();
+  await page.getByRole('button', { name: '直線路點', exact: true }).click();
   const box = await page.locator('.map-canvas').boundingBox();
   const target = { x: Math.round(box.x + 240), y: Math.round(box.y + 250) };
   await page.touchscreen.tap(target.x, target.y);

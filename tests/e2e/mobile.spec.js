@@ -25,6 +25,7 @@ test('draw, undo, GPX download/import, and local persistence', async ({ page }) 
   await page.goto('/');
   await expect(page.locator('.source-pill')).toContainText('iB20000 等高距');
   await page.getByRole('button', { name: '開始繪畫路線' }).click();
+  await page.getByRole('button', { name: '直線路點', exact: true }).click();
   const map = page.locator('.map-canvas');
   await map.click({ position: { x: 150, y: 220 } });
   await map.click({ position: { x: 225, y: 300 } });
@@ -84,7 +85,8 @@ test('never draws on a failed basemap or silently presents it as navigable', asy
   await expect(page.getByText('地圖暫時未能載入')).toBeVisible();
   await expect(page.getByText('未載入的地圖不能作導航', { exact: false })).toBeVisible();
   await page.getByRole('button', { name: '開始繪畫路線' }).click();
-  await page.locator('.map-canvas').click({ position: { x: 80, y: 180 } });
+  await page.getByRole('button', { name: '直線路點', exact: true }).click();
+  await page.locator('.map-canvas').click({ position: { x: 5, y: 180 } });
   await expect(page.locator('.stat').nth(1)).toContainText('0 點');
 });
 
@@ -132,6 +134,7 @@ test('dragging an imported point clears stale height/time and undo restores it',
   const xml = `<gpx xmlns="http://www.topografix.com/GPX/1/1"><trk><trkseg><trkpt lat="22.3835" lon="114.3225"><ele>123</ele><time>2026-01-01T10:00:00Z</time></trkpt><trkpt lat="22.3855" lon="114.3245"/></trkseg></trk></gpx>`;
   await page.locator('input[type=file]').setInputFiles({ name: 'recorded.gpx', mimeType: 'application/gpx+xml', buffer: Buffer.from(xml) });
   await page.getByRole('button', { name: '開始繪畫路線' }).click();
+  await page.getByRole('button', { name: '直線路點', exact: true }).click();
   const marker = page.locator('.route-marker--start');
   await expect(marker).toBeVisible();
   const bounds = await marker.boundingBox();
@@ -173,6 +176,7 @@ test('manual map reading does not request or access device geolocation', async (
   await page.getByRole('button', { name: '地形圖', exact: true }).click();
   await expect(page.locator('.source-pill')).toContainText('iB20000');
   await page.getByRole('button', { name: '開始繪畫路線' }).click();
+  await page.getByRole('button', { name: '直線路點', exact: true }).click();
   await page.locator('.map-canvas').click({ position: { x: 150, y: 260 } });
   await expect(page.locator('.stat').nth(1)).toContainText('1 點');
   expect(await page.evaluate(() => window.geolocationAccessCount)).toBe(0);

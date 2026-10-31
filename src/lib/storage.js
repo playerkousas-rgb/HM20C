@@ -52,8 +52,9 @@ export function loadPreferences() {
       basemap: value.basemap === 'countryside' ? 'countryside' : 'hm20c',
       pixelsPerMm: Number.isFinite(value.pixelsPerMm) && value.pixelsPerMm >= 2.5 && value.pixelsPerMm <= 12 ? value.pixelsPerMm : null,
       orientation: isOrientationPreference(value.orientation) ? value.orientation : DEFAULT_ORIENTATION,
+      gridVisible: value.gridVisible !== false,
     };
-  } catch { return { basemap: 'hm20c', pixelsPerMm: null, orientation: DEFAULT_ORIENTATION }; }
+  } catch { return { basemap: 'hm20c', pixelsPerMm: null, orientation: DEFAULT_ORIENTATION, gridVisible: true }; }
 }
 
 export function savePreferences(prefs) {

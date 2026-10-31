@@ -18,3 +18,8 @@ test-results/
 *.pmtiles
 *.mbtiles
 *.gpkg
+
+# Server-side secrets; keep the example, never real environment values.
+.env
+.env.*
+!.env.example

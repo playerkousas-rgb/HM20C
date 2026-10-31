@@ -1,17 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle, ArrowDownToLine, ArrowUpFromLine, Check, ChevronDown, ChevronRight, ChevronUp,
-  Download, FileDown, FolderOpen, Info, Layers2, LocateFixed,
+  Crosshair, Download, FileDown, FolderOpen, Grid3X3, Info, Layers2, LocateFixed,
   LockKeyhole, Map as MapIcon, MapPin, Mountain, Navigation, Pencil, RotateCcw,
   Ruler, ShieldCheck, Trash2, Undo2, X,
 } from 'lucide-react';
 import MapView from './components/MapView';
 import OfflineContent from './components/OfflineContent';
 import PlacesContent from './components/PlacesContent';
+import LeaderContent from './components/LeaderContent';
+import BearingCard from './components/BearingCard';
 import { BOOKMARKS_KEY, loadBookmarks, makeBookmark, MAX_BOOKMARKS, saveBookmarks } from './lib/bookmarks';
 import { allRoutePoints, formatDistance, formatLatitude, formatLongitude, routeDistance, routePointCount, scaleBarForMetersPerPixel } from './lib/geo';
 import { emptyRoute, makeGpx, MAX_GPX_BYTES, MAX_GPX_POINTS, parseGpx } from './lib/gpx';
 import { orientationForView, SHEET_ROTATIONS, signedAngle } from './lib/orientation';
+import { gridReference } from './lib/utm';
+import { snapHikingStroke } from './lib/hiking';
 import { loadMapCenter, loadPreferences, loadRoute, saveMapCenter, savePreferences, saveRoute } from './lib/storage';
 import { clearSavedAreas, downloadAreaTiles, loadSavedAreas, planOfflineArea, prepareOfflineEngine, recordSavedArea } from './lib/offline';
 import { useInstallPrompt } from './lib/install';
@@ -76,6 +80,13 @@ function App() {
   const [prefs, setPrefs] = useState(loadPreferences);
   const [initialCenter] = useState(loadMapCenter);
   const [editing, setEditing] = useState(false);
+  const [drawMode, setDrawMode] = useState('magnet');
+  const [routingBusy, setRoutingBusy] = useState(false);
+  const [routingMessage, setRoutingMessage] = useState('');
+  const [bearingActive, setBearingActive] = useState(false);
+  const [bearingPoints, setBearingPoints] = useState([]);
+  const [leaderUntil, setLeaderUntil] = useState(0);
+  const [leaderCenter, setLeaderCenter] = useState(initialCenter);
   const [mapExpanded, setMapExpanded] = useState(false);
   const [bookmarks, setBookmarks] = useState(loadBookmarks);
   const [tileStatus, setTileStatus] = useState('loading');
@@ -107,6 +118,9 @@ function App() {
   const toastTimer = useRef(null);
   const offlineAbort = useRef(null);
   const sheetAbort = useRef(null);
+  const routingAbort = useRef(null);
+  const sourceVersion = useRef('');
+  sourceVersion.current = `${prefs.basemap}:${activeSheetId || ''}:${sheetRevision}`;
 
   useEffect(() => { setSaved(saveRoute(route)); }, [route]);
   useEffect(() => { savePreferences(prefs); }, [prefs]);
@@ -136,7 +150,7 @@ function App() {
     }).catch(() => { if (alive) setSheetRecord({ id: activeSheetId, phase: 'error', message: '未能開啟本機圖幅儲存；請檢查手機設定。' }); });
     return () => { alive = false; };
   }, [activeSheetId, sheetRevision]);
-  useEffect(() => () => { clearTimeout(toastTimer.current); offlineAbort.current?.abort(); sheetAbort.current?.abort(); }, []);
+  useEffect(() => () => { clearTimeout(toastTimer.current); offlineAbort.current?.abort(); sheetAbort.current?.abort(); routingAbort.current?.abort(); }, []);
   useEffect(() => {
     const timer = setTimeout(() => saveMapCenter(view), 350);
     return () => clearTimeout(timer);
@@ -148,6 +162,16 @@ function App() {
     return () => { window.removeEventListener('online', onNetwork); window.removeEventListener('offline', onNetwork); };
   }, []);
 
+  useEffect(() => {
+    if (!leaderUntil) return undefined;
+    const expire = () => { if (Date.now() >= leaderUntil) setLeaderUntil(0); };
+    const timer = setTimeout(expire, Math.max(0, leaderUntil - Date.now()));
+    document.addEventListener('visibilitychange', expire);
+    return () => { clearTimeout(timer); document.removeEventListener('visibilitychange', expire); };
+  }, [leaderUntil]);
+
+  const leaderActive = leaderUntil > Date.now();
+  const centerReference = leaderActive ? gridReference(leaderCenter) : null;
   const usingSheet = prefs.basemap === 'hm20c' && Boolean(activeSheetId);
   const pointCount = routePointCount(route);
   const hasPoints = pointCount + route.waypoints.length > 0;
@@ -165,7 +189,17 @@ function App() {
     toastTimer.current = setTimeout(() => setToast(''), 3600);
   }
 
+  function cancelRouting(message = '') {
+    if (routingAbort.current) {
+      routingAbort.current.abort();
+      routingAbort.current = null;
+      setRoutingBusy(false);
+      if (message) setRoutingMessage(message);
+    }
+  }
+
   function changeRoute(next, record = true) {
+    cancelRouting('沿徑計算已取消；現有路線沒有被覆蓋。');
     if (record) {
       history.current = [...history.current.slice(-19), routeRef.current];
       setUndoCount(history.current.length);
@@ -175,6 +209,7 @@ function App() {
   }
 
   function undo() {
+    cancelRouting('沿徑計算已取消；現有路線沒有被覆蓋。');
     if (!history.current.length) return;
     const previous = history.current[history.current.length - 1];
     history.current = history.current.slice(0, -1);
@@ -198,7 +233,9 @@ function App() {
     if (!segments.length) segments.push({ kind: 'draw', name: '', points: [point] });
     else {
       const last = segments[segments.length - 1];
-      segments[segments.length - 1] = { ...last, points: [...last.points, point] };
+      // A manual straight extension must not be mislabelled as snapped geometry.
+      if (last.kind === 'snap') segments.push({ kind: 'draw', name: '', points: [last.points.at(-1), point] });
+      else segments[segments.length - 1] = { ...last, points: [...last.points, point] };
     }
     changeRoute({ ...previous, segments });
   }
@@ -225,18 +262,72 @@ function App() {
     notify('路點已調整');
   }
 
-  function toggleDrawing() {
-    setEditing((value) => !value);
-    if (!editing) {
-      setMapExpanded(false);
-      notify('點選地圖加入路點；拖動路點可調整。');
+  async function drawStroke(stroke) {
+    if (routingAbort.current) return;
+    if (tileStatus !== 'ready') { notify('底圖未完整載入，請先檢查地圖。'); return; }
+    if (navigator.onLine === false) { setRoutingMessage('沿徑磁石需要網絡；未有新增直線。'); return; }
+    const previous = routeRef.current;
+    const oldPoints = previous.segments.flatMap((segment) => segment.points);
+    const start = oldPoints.at(-1) || null;
+    const source = sourceVersion.current;
+    const abort = new AbortController(); routingAbort.current = abort;
+    setRoutingBusy(true); setRoutingMessage('正在送交 BRouter 計算山徑…');
+    try {
+      const points = await snapHikingStroke(stroke, { start, signal: abort.signal });
+      if (abort.signal.aborted || routingAbort.current !== abort) return;
+      if (routeRef.current !== previous || sourceVersion.current !== source) throw new Error('地圖或路線已更改；請重新畫這一筆。');
+      if (!mapRef.current?.canUsePoints(points)) throw new Error('計算出的山徑離開本機圖幅；請切換圖幅或重畫。');
+      if (routePointCount(previous) + previous.waypoints.length + points.length > MAX_GPX_POINTS) throw new Error('路線點數超過上限；請先精簡 GPX。');
+      routingAbort.current = null;
+      changeRoute({ ...previous, segments: [...previous.segments, { kind: 'snap', name: '', points }] });
+      setRoutingMessage('已貼上路網；請核對路徑是否安全及開放。');
+      notify('已加入沿徑筆畫；可撤回整筆。');
+    } catch (error) {
+      if (!abort.signal.aborted) {
+        setRoutingMessage(error?.message || '沿徑計算失敗；路線未有更改。');
+        notify(error?.message || '沿徑計算失敗；路線未有更改。');
+      }
+    } finally {
+      if (routingAbort.current === abort) routingAbort.current = null;
+      // A later job must not have its busy state cleared by an older response.
+      if (!routingAbort.current) setRoutingBusy(false);
     }
+  }
+
+  function toggleDrawing() {
+    if (editing) cancelRouting('沿徑計算已取消；現有路線沒有被覆蓋。');
+    setEditing(!editing);
+    if (!editing) {
+      setBearingActive(false);
+      setMapExpanded(false);
+      setRoutingMessage('');
+      notify(drawMode === 'magnet' ? '沿可見山徑拖畫；放手後連網貼路。' : '點選地圖加入直線路點；拖動路點可調整。');
+    }
+  }
+
+  function selectDrawMode(mode) {
+    if (drawMode === mode) return;
+    cancelRouting('沿徑計算已取消；現有路線沒有被覆蓋。');
+    setRoutingMessage(''); setDrawMode(mode);
+  }
+
+  function openBearing() {
+    cancelRouting('沿徑計算已取消；現有路線沒有被覆蓋。');
+    setEditing(false); setBearingActive(true); setMapExpanded(true);
+  }
+  function addBearingPoint(point) {
+    if (tileStatus !== 'ready') { notify('底圖未完整載入，請先檢查地圖。'); return; }
+    setBearingPoints((old) => old.length < 2 ? [...old, point] : old);
+  }
+  function moveBearingPoint(index, lat, lon) {
+    setBearingPoints((old) => old.map((point, i) => i === index ? { lat, lon } : point));
   }
 
   function toggleRoutePanel() {
     const collapse = !mapExpanded;
     setMapExpanded(collapse);
     if (collapse && editing) {
+      cancelRouting('沿徑計算已取消；現有路線沒有被覆蓋。');
       setEditing(false);
       notify('已結束繪畫，路線仍然保留。');
     }
@@ -244,6 +335,7 @@ function App() {
 
   function setBasemap(basemap) {
     if (basemap === prefs.basemap) return;
+    cancelRouting('底圖已更改；沿徑計算已取消。');
     setPrefs((previous) => ({ ...previous, basemap }));
     setTileStatus('loading');
     setContourStatus(basemap === 'hm20c' ? 'loading' : 'not-applicable');
@@ -267,6 +359,7 @@ function App() {
   }
 
   function goToPlace(lat, lon, name) {
+    cancelRouting('圖心已更改；沿徑計算已取消。');
     mapRef.current?.goTo(lat, lon);
     saveMapCenter({ lat, lon });
     setModal(null);
@@ -329,6 +422,7 @@ function App() {
   }
 
   function openSavedArea(area) {
+    cancelRouting('地圖範圍已更改；沿徑計算已取消。');
     if (area.basemap === 'hm20c' && activeSheetId) { saveActiveSheet(null); setActiveSheetId(null); }
     if (area.basemap !== prefs.basemap) setBasemap(area.basemap);
     mapRef.current?.goTo(area.center.lat, area.center.lon);
@@ -401,6 +495,7 @@ function App() {
   }
 
   function showStoredSheet(meta) {
+    cancelRouting('圖幅已更改；沿徑計算已取消。');
     const persisted = saveActiveSheet(meta.id);
     setActiveSheetId(meta.id);
     setSheetRevision((value) => value + 1);
@@ -413,6 +508,7 @@ function App() {
   }
 
   function useOnlineMap() {
+    cancelRouting('圖幅已更改；沿徑計算已取消。');
     const persisted = saveActiveSheet(null);
     setActiveSheetId(null);
     setSheetJob({ phase: 'idle', message: persisted ? '已切回原有地形圖；圖幅仍保存在裝置。' : '已切回原有地形圖，但來源選擇未能保存。', done: 0, total: 0 });
@@ -421,6 +517,7 @@ function App() {
   }
 
   async function removeStoredSheet(id) {
+    if (activeSheetId === id) cancelRouting('圖幅已更改；沿徑計算已取消。');
     try {
       await deleteStoredSheet(id);
       if (activeSheetId === id) { saveActiveSheet(null); setActiveSheetId(null); }
@@ -454,6 +551,7 @@ function App() {
   }
 
   function exportFile() {
+    if (routingAbort.current) { notify('請先等沿徑計算完成或取消，再下載 GPX。'); return; }
     if (!allRoutePoints(routeRef.current).length) { notify('先繪製或匯入路線，再下載 GPX。'); return; }
     const blob = new Blob([makeGpx(routeRef.current)], { type: 'application/gpx+xml;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -488,7 +586,7 @@ function App() {
   return <div className="app-shell">
     <header className="app-header">
       <div className="brand"><BrandMark/><div><div className="brand-name">山野地圖<span className="brand-separator"> / </span><span className="brand-en">SCOUT TRAIL MAP</span></div><div className="brand-sub">為每一次山野探索而設</div></div></div>
-      <div className="header-right"><span className="header-local"><span className="header-dot"/>路線只儲存在此裝置</span><button className="header-about" onClick={() => setModal('about')}><Info size={16}/><span>使用說明</span></button></div>
+      <div className="header-right"><span className="header-local"><span className="header-dot"/>路線儲存在此裝置 · 磁石需連網</span><button className={`header-leader ${leaderActive ? 'is-active' : ''}`} onClick={() => setModal('leader')} aria-label={leaderActive ? '領袖模式已開啟' : '開啟領袖模式'}><LockKeyhole size={16}/><span>{leaderActive ? '領袖模式' : '領袖登入'}</span></button><button className="header-about" onClick={() => setModal('about')}><Info size={16}/><span>使用說明</span></button></div>
     </header>
 
     <main className="workspace">
@@ -500,13 +598,15 @@ function App() {
         <div className="route-card">
           <div className="route-name-label"><span>路線名稱</span><Pencil size={13}/></div>
           <input aria-label="路線名稱" value={route.name} maxLength={100} onChange={(event) => changeRoute({ ...routeRef.current, name: event.target.value }, false)} placeholder="為路線命名" />
-          <div className="route-stats"><div className="stat"><span>直線距離</span><strong>{distance}<small> km</small></strong></div><div className="stat"><span>總點數</span><strong>{pointCount + route.waypoints.length}<small> 點</small></strong></div><button className="view-route" aria-label="將路線置中" disabled={!hasPoints} onClick={() => { mapRef.current?.centerRoute(); notify('已將路線置中；鎖定比例下未必能同時顯示全線。'); }}><LocateFixed size={17}/></button></div>
-          <div className="distance-note">點與點之間的水平距離，非沿徑導航</div>
+          <div className="route-stats"><div className="stat"><span>路線距離</span><strong>{distance}<small> km</small></strong></div><div className="stat"><span>總點數</span><strong>{pointCount + route.waypoints.length}<small> 點</small></strong></div><button className="view-route" aria-label="將路線置中" disabled={!hasPoints} onClick={() => { mapRef.current?.centerRoute(); notify('已將路線置中；鎖定比例下未必能同時顯示全線。'); }}><LocateFixed size={17}/></button></div>
+          <div className="distance-note">按路線點計算水平距離；非自動導航</div>
         </div>
 
-        <div className="draw-guide"><div className="guide-icon"><Pencil size={17}/></div><div><strong>{editing ? '繪畫模式已開啟' : '開始規劃你的旅程'}</strong><p>{editing ? '點地圖加點，拖動路點可微調。' : '在地圖上點選路點，連成你的路線。'}</p></div></div>
+        <div className="draw-guide"><div className="guide-icon"><Pencil size={17}/></div><div><strong>{editing ? '繪畫模式已開啟' : '開始規劃你的旅程'}</strong><p>{editing ? (drawMode === 'magnet' ? '沿山徑拖畫，放手後貼路。' : '點地圖加直線路點，拖動可微調。') : '沿山徑手畫，或選擇直線路點。'}</p></div></div>
+        {editing && <><div className="draw-mode-selector" role="group" aria-label="選擇繪路方式"><button type="button" aria-pressed={drawMode === 'magnet'} onClick={() => selectDrawMode('magnet')}>沿徑磁石</button><button type="button" aria-pressed={drawMode === 'straight'} onClick={() => selectDrawMode('straight')}>直線路點</button></div><p className="draw-mode-hint">{drawMode === 'magnet' ? '每筆接上次終點；手選位置及 IP 送往 BRouter。平移請先完成，失敗不會改畫直線。' : '手動點與點直線相連；不代表山徑。方位量度請用地圖右上角的十字工具。'}</p></>}
         <div className="draw-actions"><button className={`primary-button ${editing ? 'primary-button--active' : ''}`} onClick={toggleDrawing}>{editing ? <Check size={18}/> : <Pencil size={18}/>}<span>{editing ? '完成繪畫' : '開始繪畫路線'}</span></button><button className="square-action" onClick={undo} disabled={!undoCount} aria-label="撤回上一步" title="撤回上一步"><Undo2 size={19}/></button><button className="square-action" onClick={() => setModal('clear')} disabled={!hasPoints} aria-label="清除路線" title="清除路線"><Trash2 size={18}/></button></div>
-        {editing && (pointCount > 150 || route.waypoints.length > 150) && <p className="editing-limit">超過 150 個路線點或航點可繼續加點，但暫不支援拖動每個點。</p>}
+        {editing && routingMessage && <p className={`routing-status ${routingBusy ? 'is-busy' : ''}`} role="status">{routingMessage} {routingBusy && <button onClick={() => cancelRouting('已取消沿徑計算；路線未有更改。')}>取消</button>}</p>}
+        {editing && drawMode === 'straight' && (pointCount > 150 || route.waypoints.length > 150) && <p className="editing-limit">超過 150 個路線點或航點可繼續加點，但暫不支援拖動每個點。</p>}
 
         <div className="desktop-gpx"><div className="section-title"><div><span className="eyebrow">TAKE IT WITH YOU</span><h2>GPX 路線檔案</h2></div><FolderOpen size={19}/></div><p>匯入已有路線，或下載帶走你的計劃。</p><div className="gpx-buttons"><button onClick={() => fileRef.current?.click()}><ArrowUpFromLine size={17}/>匯入 GPX</button><button onClick={exportFile} disabled={!hasPoints}><ArrowDownToLine size={17}/>下載 GPX</button></div></div>
         <div className="planner-safety"><ShieldCheck size={17}/><p><strong>出發前小提醒</strong><br/>帶備紙本地圖及指南針，切勿單靠手機導航。</p></div>
@@ -515,25 +615,28 @@ function App() {
       </aside>
 
       <section className="map-panel" aria-label="地圖檢視">
-        <MapView ref={mapRef} basemap={prefs.basemap} activeSheetId={activeSheetId} sheetRecord={sheetRecord} onSheetError={setSheetError} onMapWarning={notify} pixelsPerMm={prefs.pixelsPerMm} rotation={orientation.angle} route={route} editing={editing} initialCenter={initialCenter} onAddPoint={addPoint} onMovePoint={movePoint} onTileStatus={setTileStatus} onLabelStatus={setLabelStatus} onContourStatus={setContourStatus} onViewChange={setView}/>
-        {!editing && <div className="map-center-marker" aria-hidden="true"><svg viewBox="0 0 24 24" width="24" height="24"><path d="M12 2v7m0 6v7M2 12h7m6 0h7" className="crosshair-halo"/><path d="M12 2v7m0 6v7M2 12h7m6 0h7" className="crosshair-lines"/><circle cx="12" cy="12" r="1.5"/></svg><span>圖心</span></div>}
+        <MapView ref={mapRef} basemap={prefs.basemap} activeSheetId={activeSheetId} sheetRecord={sheetRecord} onSheetError={setSheetError} onMapWarning={notify} pixelsPerMm={prefs.pixelsPerMm} rotation={orientation.angle} route={route} editing={editing} drawMode={drawMode} routingBusy={routingBusy} gridVisible={prefs.gridVisible} bearingActive={bearingActive} bearingPoints={bearingPoints} leaderActive={leaderActive} onLeaderCenter={setLeaderCenter} onAddBearingPoint={addBearingPoint} onMoveBearingPoint={moveBearingPoint} onDrawStroke={drawStroke} initialCenter={initialCenter} onAddPoint={addPoint} onMovePoint={movePoint} onTileStatus={setTileStatus} onLabelStatus={setLabelStatus} onContourStatus={setContourStatus} onViewChange={setView}/>
+        {((!editing && !bearingActive) || leaderActive) && <div className="map-center-marker" aria-hidden="true"><svg viewBox="0 0 24 24" width="24" height="24"><path d="M12 2v7m0 6v7M2 12h7m6 0h7" className="crosshair-halo"/><path d="M12 2v7m0 6v7M2 12h7m6 0h7" className="crosshair-lines"/><circle cx="12" cy="12" r="1.5"/></svg><span>圖心</span></div>}
         <div className="map-top-left"><div className="map-switch" role="group" aria-label="選擇地圖底圖"><button className={prefs.basemap === 'hm20c' ? 'selected' : ''} aria-pressed={prefs.basemap === 'hm20c'} onClick={() => setBasemap('hm20c')}><Layers2 size={15}/><span>地形圖</span></button><button className={prefs.basemap === 'countryside' ? 'selected' : ''} aria-pressed={prefs.basemap === 'countryside'} onClick={() => setBasemap('countryside')}><Mountain size={15}/><span>郊遊圖</span></button></div><ContourStatus basemap={prefs.basemap} sheetId={activeSheetId} sheetCoverage={sheetRecord?.id === activeSheetId ? sheetRecord.meta?.coverage : undefined} tileStatus={tileStatus} phase={contourStatus} onRetry={() => mapRef.current?.retry()}/><button className="orientation-pill" onClick={() => setModal('orientation')} title="設定地圖方向">{orientationLabel}<ChevronRight size={12}/></button>{!online && <span className="offline-indicator">離線 · 只顯示已存範圍</span>}</div>
         <button className="scale-lock" onClick={openCalibration} aria-label="比例已鎖定，設定螢幕校準"><LockKeyhole size={15}/><span><small>{prefs.pixelsPerMm ? '鎖定 · 已校準' : '鎖定 · 未校準'}</small><strong>1 : {prefs.basemap === 'hm20c' ? '20,000' : '25,000'}<sup>{prefs.pixelsPerMm ? '' : '*'}</sup></strong></span><ChevronRight size={13}/></button>
-        <div className="map-controls"><button className="north-indicator" onClick={() => setModal('orientation')} aria-label="設定地圖方向" title="箭頭指示真北；按此設定方向"><span>N</span><Navigation size={17} fill="currentColor" style={{ transform: `rotate(${orientation.angle - 45}deg)` }}/></button><button onClick={() => setModal('regions')} aria-label="選擇地區與書籤" title="選擇地區與書籤"><MapPin size={19}/></button><button onClick={openOffline} aria-label="離線預載地圖" title="離線預載地圖"><Download size={19}/></button></div>
-        {editing && <div className="drawing-indicator"><span/><Pencil size={14}/> 點選加點 · 路點以直線連接</div>}
+        <div className="map-controls"><button className="north-indicator" onClick={() => setModal('orientation')} aria-label="設定地圖方向" title="箭頭指示真北；按此設定方向"><span>N</span><Navigation size={17} fill="currentColor" style={{ transform: `rotate(${orientation.angle - 45}deg)` }}/></button><button onClick={() => setModal('regions')} aria-label="選擇地區與書籤" title="選擇地區與書籤"><MapPin size={19}/></button><button className={prefs.gridVisible ? 'is-selected' : ''} aria-pressed={prefs.gridVisible} onClick={() => setPrefs((previous) => ({ ...previous, gridVisible: !previous.gridVisible }))} aria-label="顯示 UTM 網格線" title="顯示或隱藏 1 公里 UTM 網格線"><Grid3X3 size={17}/><span className="map-control-label">格網</span></button><button className={bearingActive || bearingPoints.length ? 'is-selected' : ''} aria-pressed={bearingActive} onClick={openBearing} aria-label="兩點方位直線" title="兩點方位直線"><Crosshair size={17}/><span className="map-control-label">方位</span></button><button onClick={openOffline} aria-label="離線預載地圖" title="離線預載地圖"><Download size={17}/><span className="map-control-label">離線</span></button></div>
+        {editing && <div className="drawing-indicator"><span/><Pencil size={14}/> {drawMode === 'magnet' ? (routingBusy ? '正在貼合山徑…' : '沿山徑拖畫 · 放手貼路') : '點選加點 · 路點以直線連接'}</div>}
+        <BearingCard points={bearingPoints} active={bearingActive} leader={leaderActive} onReset={() => setBearingPoints([])} onFinish={() => setBearingActive(false)} onResume={openBearing}/>
+        {leaderActive && <div className="leader-coordinate" aria-label="領袖圖心八位座標"><small>領袖 · 圖心八位座標（不是 GPS）</small><strong>{centerReference?.text || '圖心超出香港 UTM 範圍'}</strong><span>WGS84 UTM · 10 米方格</span></div>}
         {(tileStatus === 'error' || tileStatus === 'outside') && <div className="map-error" role="alert"><div className="map-error-icon"><AlertTriangle size={21}/></div><strong>{usingSheet ? (tileStatus === 'outside' ? `圖心已離開 ${activeSheetId} 圖幅` : '本機圖幅未能載入') : '地圖暫時未能載入'}</strong><p>{usingSheet ? (tileStatus === 'outside' ? '邊界外沒有此圖幅資料，請移回圖幅內或手動切換圖幅。' : `${sheetError || '請重新讀取或重新匯入檔案。'} 未載入的地圖不能作導航。`) : '請檢查網絡連線，未載入的地圖不能作導航。'}</p><button onClick={() => { if (usingSheet) setSheetRevision((value) => value + 1); mapRef.current?.retry(); }}><RotateCcw size={14}/> 重新載入</button>{usingSheet && <button onClick={openOffline}>管理圖幅</button>}</div>}
         {(tileStatus === 'partial' || (tileStatus !== 'error' && tileStatus !== 'outside' && !usingSheet && prefs.basemap === 'hm20c' && (labelStatus === 'error' || labelStatus === 'partial'))) && <div className="map-partial" role="alert"><AlertTriangle size={15}/> {tileStatus === 'partial' ? (usingSheet ? `部分本機圖幅未能解碼，請勿依賴此畫面導航。${sheetError ? ` ${sheetError}` : ''}` : '部分底圖未載入，請勿依賴此畫面導航。') : '部分地名未載入，請勿依賴此畫面導航。'}<button onClick={() => mapRef.current?.retry()}>重試</button></div>}
         <div className="map-footer"><div className="map-scale"><span>0</span><span style={{ width: `${scaleBar.pixels}px` }} className="scale-line"/><span>{scaleLabel}</span></div><div className="map-credit">{usingSheet ? <><img src="/landsd-logo.svg" alt="地政總署標誌"/><span>香港地政總署／CSDI<br/><a href="https://data.gov.hk/tc-data/dataset/hk-landsd-openmap-development-hkms-digital-b20k" target="_blank" rel="noreferrer">iB20000 試用檔案 · 來源須核對</a></span></> : prefs.basemap === 'hm20c' ? <><img src="/landsd-logo.svg" alt="地政總署標誌"/><span>Map from Lands Department<br/><a href="https://www.arcgis.com/home/item.html?id=566289c35c214178b572a7e934a1cd9a" target="_blank" rel="noreferrer">等高線 iB20000 · Esri China (HK)</a></span></> : <span>Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>, SRTM<br/>Map style © <a href="https://opentopomap.org/" target="_blank" rel="noreferrer">OpenTopoMap</a> (CC BY-SA)</span>}</div></div>
-        <div className="map-coordinates" aria-label="地圖中心座標，並非使用者位置" title="地圖中心座標，並非使用者位置"><span>圖心</span> {formatLatitude(view.lat)} &nbsp; {formatLongitude(view.lon)}</div>
+        {!leaderActive && <div className="map-coordinates" aria-label="地圖中心座標，並非使用者位置" title="地圖中心座標，並非使用者位置"><span>圖心</span> {formatLatitude(view.lat)} &nbsp; {formatLongitude(view.lon)}</div>}
       </section>
     </main>
 
-    <nav className="mobile-nav" aria-label="主要功能"><button className={!editing && !modal ? 'active' : ''} onClick={() => { setEditing(false); setModal(null); setMapExpanded(true); }}><MapIcon size={20}/><span>地圖</span></button><button className={editing ? 'active' : ''} onClick={toggleDrawing}><Pencil size={19}/><span>繪路</span></button><button className={modal === 'gpx' ? 'active' : ''} onClick={() => setModal('gpx')}><FolderOpen size={20}/><span>GPX</span></button><button className={modal === 'about' ? 'active' : ''} onClick={() => setModal('about')}><Info size={20}/><span>說明</span></button></nav>
+    <nav className="mobile-nav" aria-label="主要功能"><button className={!editing && !modal ? 'active' : ''} onClick={() => { cancelRouting('沿徑計算已取消；現有路線沒有被覆蓋。'); setEditing(false); setBearingActive(false); setModal(null); setMapExpanded(true); }}><MapIcon size={20}/><span>地圖</span></button><button className={editing ? 'active' : ''} onClick={toggleDrawing}><Pencil size={19}/><span>繪路</span></button><button className={modal === 'gpx' ? 'active' : ''} onClick={() => setModal('gpx')}><FolderOpen size={20}/><span>GPX</span></button><button className={modal === 'about' ? 'active' : ''} onClick={() => setModal('about')}><Info size={20}/><span>說明</span></button></nav>
     <input type="file" ref={fileRef} accept=".gpx,application/gpx+xml,application/xml,text/xml" hidden onChange={importFile}/>
     {toast && <div className="toast" role="status">{toast}</div>}
 
+    {modal === 'leader' && <Modal eyebrow="LEADER MODE" title="領袖模式" onClose={() => setModal(null)}><LeaderContent active={leaderActive} onUnlock={(seconds) => { setLeaderUntil(Date.now() + seconds * 1000); setModal(null); notify('領袖模式已開啟；圖心不是你的位置。'); }} onLock={() => { setLeaderUntil(0); setModal(null); notify('已返回成員模式。'); }}/></Modal>}
     {modal === 'offline' && <Modal eyebrow="OFFLINE MAPS" title="預載離線地圖" onClose={() => { if (sheetAbort.current) sheetAbort.current.abort(); else if (offlineAbort.current) offlineAbort.current.abort(); else setModal(null); }}><OfflineContent plan={offlinePlan} areas={offlineAreas} job={offlineJob} busy={offlineBusy} install={install} onDownload={downloadOffline} onStop={() => offlineAbort.current?.abort()} onSelect={openSavedArea} onClear={clearOffline} sheet={{ center: view, basemap: prefs.basemap, sheets, activeId: activeSheetId, listError: sheetListError, job: sheetJob, busy: sheetBusy, onDownload: (id) => processSheet(id), onImport: processSheet, onStop: () => sheetAbort.current?.abort(), onSelect: showStoredSheet, onDelete: removeStoredSheet, onOnline: useOnlineMap }}/></Modal>}
-    {modal === 'gpx' && <Modal eyebrow="ROUTE FILES" title="GPX 路線檔案" onClose={() => setModal(null)}><p className="modal-intro">匯入別人的路線，或將你的計劃下載到其他裝置。</p><div className="modal-option-list"><button onClick={() => fileRef.current?.click()}><span className="option-icon"><ArrowUpFromLine size={20}/></span><span><strong>匯入 GPX</strong><small>支援航跡、路線和獨立航點</small></span><ChevronRight size={18}/></button><button onClick={exportFile} disabled={!hasPoints}><span className="option-icon"><FileDown size={20}/></span><span><strong>下載 GPX</strong><small>儲存目前路線到手機</small></span><ChevronRight size={18}/></button></div><p className="modal-footnote">GPX 只在此裝置處理，不會上傳到伺服器。未支援的擴充資料不會保留。</p></Modal>}
+    {modal === 'gpx' && <Modal eyebrow="ROUTE FILES" title="GPX 路線檔案" onClose={() => setModal(null)}><p className="modal-intro">匯入別人的路線，或將你的計劃下載到其他裝置。</p><div className="modal-option-list"><button onClick={() => fileRef.current?.click()}><span className="option-icon"><ArrowUpFromLine size={20}/></span><span><strong>匯入 GPX</strong><small>支援航跡、路線和獨立航點</small></span><ChevronRight size={18}/></button><button onClick={exportFile} disabled={!hasPoints}><span className="option-icon"><FileDown size={20}/></span><span><strong>下載 GPX</strong><small>儲存目前路線到手機</small></span><ChevronRight size={18}/></button></div><p className="modal-footnote">GPX 檔案只在此裝置處理；使用沿徑磁石時，手畫的錨點會送到 BRouter。未支援的擴充資料不會保留。</p></Modal>}
     {modal === 'replace' && <Modal eyebrow="IMPORT GPX" title="取代現有路線？" onClose={() => { setPendingImport(null); setModal(null); }}><p className="modal-intro">匯入會取代目前的路線。建議先下載現有 GPX 備份；匯入後亦可使用撤回。</p><div className="modal-actions"><button className="secondary-button" onClick={() => { setPendingImport(null); setModal(null); }}>取消</button><button className="primary-button" onClick={() => pendingImport && applyImport(pendingImport)}>確認匯入</button></div></Modal>}
     {modal === 'clear' && <Modal eyebrow="CLEAR ROUTE" title="清除目前路線？" onClose={() => setModal(null)}><p className="modal-intro">路線及航點將從地圖移除。你可以在此瀏覽器內用「撤回」復原。</p><div className="modal-actions"><button className="secondary-button" onClick={() => setModal(null)}>取消</button><button className="danger-button" onClick={() => { changeRoute(emptyRoute()); setEditing(false); setModal(null); notify('路線已清除，可按撤回復原。'); }}>清除路線</button></div></Modal>}
     {modal === 'regions' && <Modal eyebrow="PLACES & BOOKMARKS" title="地點與書籤" onClose={() => setModal(null)}><PlacesContent center={view} bookmarks={bookmarks} regions={REGIONS} onAdd={addBookmark} onRemove={removeBookmark} onGo={goToPlace}/><p className="modal-footnote">地點只作瀏覽中心，並非建議行山路線。</p></Modal>}
@@ -552,7 +655,7 @@ function App() {
       <div className="modal-actions"><button className="primary-button" onClick={() => setModal(null)}>完成</button></div>
     </Modal>}
     {modal === 'scale' && <Modal eyebrow="SCALE CALIBRATION" title="校準螢幕比例" onClose={() => setModal(null)}><p className="modal-intro">不同手機的實際像素大小不同。用尺量度以下線段，輸入實際長度，才能較準確顯示鎖定比例。</p><div className="calibration-ruler"><div className="calibration-line"/><span>請量度這條線的實際長度</span></div><label className="calibration-input">量得長度 <span><input type="number" inputMode="decimal" min="16.7" max="80" value={measurement} onChange={(event) => setMeasurement(event.target.value)} placeholder="例如 50"/> mm</span></label><p className="modal-footnote">未校準時按 96 dpi 估算。校準後比例以畫面中央為準；更改瀏覽器縮放或螢幕方向後請重新量度。地面距離請以比例尺為準。</p><div className="modal-actions"><button className="secondary-button" onClick={() => { setPrefs((previous) => ({ ...previous, pixelsPerMm: null })); setModal(null); notify('已還原預設螢幕估算。'); }}>還原預設</button><button className="primary-button" onClick={saveCalibration}><Ruler size={17}/> 儲存校準</button></div></Modal>}
-    {modal === 'about' && <Modal eyebrow="MAP NOTES" title="關於這張地圖" onClose={() => setModal(null)} className="about-modal"><p className="modal-intro">為童軍遠足規劃而設。先了解資料來源，再安心出發。</p><div className="about-block"><span className="about-block-icon"><Layers2 size={18}/></span><div><strong>地形圖 · HM20C 參考</strong><p>地政總署 Topographic Map API 及中文地名，配合 HKMAP 使用的 iB20000 等高線（每 20 米，經 Esri China (HK) 的公開副本，最後修改於 2021 年；原始資料可能更舊或過時）。這不是紙本 HM20C 掃描；等高線載入狀態會顯示在地圖上。另可試用本機匯入的 iB20000 數碼圖幅，不會疊加上述即時底圖、地名或等高線；實際圖幅內容須核對。</p></div></div><div className="about-block"><span className="about-block-icon"><Mountain size={18}/></span><div><strong>郊遊圖 · OpenTopoMap</strong><p>獨立的 OpenStreetMap／SRTM 地形圖，不是地政總署紙本郊區地圖。切換時不會疊加地政總署地名或 iB20000 等高線。</p></div></div><div className="about-block"><span className="about-block-icon"><MapIcon size={18}/></span><div><strong>人手讀圖</strong><p>以地形、地名、等高線、方向及比例尺配合紙圖和指南針辨認位置。本工具不會要求定位權限或自動跟隨位置。</p></div></div><div className="about-block"><span className="about-block-icon"><LockKeyhole size={18}/></span><div><strong>比例與離線</strong><p>比例分別鎖定在螢幕估算的 1:20,000 / 1:25,000；須量度螢幕才可校準。可預載目前畫面，或試用 iB20000 圖幅下載／本機匯入；試用圖幅內容及郊遊圖整區尚未驗證，請先以飛航模式實測。</p></div></div><div className="about-block"><span className="about-block-icon"><Info size={18}/></span><div><strong>其他等高線資料</strong><p>地政總署 iB1000 在適用地區有 2 米等高線；<a href="https://www.arcgis.com/home/item.html?id=86815de825f74309aa580033dbbff44e" target="_blank" rel="noreferrer">Esri 公開副本</a>於 2022 年更新，部分原始資料可能更舊，亦非政府即時 API。線距較密不等於精度較高；為保留 20 米 HM20C 參考，暫不取代現有圖層。</p></div></div><div className="about-warning"><AlertTriangle size={17}/><span>路線以直線連接，並非自動跟隨山徑。地圖資料可能有誤或過時；出發前請核對官方資訊，帶備紙本地圖及指南針。</span></div><p className="modal-footnote">使用地政總署地圖須遵守 <a href="https://portal.csdi.gov.hk/csdi-webpage/doc/TNC" target="_blank" rel="noreferrer">LandsD Map API 使用條款</a>。<br/><a href="/third-party-licenses.txt" target="_blank" rel="noreferrer">第三方軟件授權</a>。</p></Modal>}
+    {modal === 'about' && <Modal eyebrow="MAP NOTES" title="關於這張地圖" onClose={() => setModal(null)} className="about-modal"><p className="modal-intro">為童軍遠足規劃而設。先了解資料來源，再安心出發。</p><div className="about-block"><span className="about-block-icon"><Layers2 size={18}/></span><div><strong>地形圖 · HM20C 參考</strong><p>地政總署 Topographic Map API 及中文地名，配合 HKMAP 使用的 iB20000 等高線（每 20 米，經 Esri China (HK) 的公開副本，最後修改於 2021 年；原始資料可能更舊或過時）。這不是紙本 HM20C 掃描；等高線載入狀態會顯示在地圖上。另可試用本機匯入的 iB20000 數碼圖幅，不會疊加上述即時底圖、地名或等高線；實際圖幅內容須核對。</p></div></div><div className="about-block"><span className="about-block-icon"><Mountain size={18}/></span><div><strong>郊遊圖 · OpenTopoMap</strong><p>獨立的 OpenStreetMap／SRTM 地形圖，不是地政總署紙本郊區地圖。切換時不會疊加地政總署地名或 iB20000 等高線。</p></div></div><div className="about-block"><span className="about-block-icon"><MapIcon size={18}/></span><div><strong>人手讀圖</strong><p>以地形、地名、等高線、方向及比例尺配合紙圖和指南針辨認位置。本工具不會要求定位權限或自動跟隨位置。</p></div></div><div className="about-block"><span className="about-block-icon"><Crosshair size={18}/></span><div><strong>方格與方位</strong><p>「格網」是 WGS84 UTM 1 公里格，不是香港 1980 格網；「方位」的 A／B 十字可拖動，延伸線不是山徑，也不加入 GPX。領袖模式以密碼顯示十字圖心八位座標及前後視答案；磁北按 WMM2025 估算，須核對紙圖磁差與手機日期。</p></div></div><div className="about-block"><span className="about-block-icon"><LockKeyhole size={18}/></span><div><strong>比例與離線</strong><p>比例分別鎖定在螢幕估算的 1:20,000 / 1:25,000；須量度螢幕才可校準。可預載目前畫面，或試用 iB20000 圖幅下載／本機匯入；試用圖幅內容及郊遊圖整區尚未驗證，請先以飛航模式實測。</p></div></div><div className="about-block"><span className="about-block-icon"><Info size={18}/></span><div><strong>其他等高線資料</strong><p>地政總署 iB1000 在適用地區有 2 米等高線；<a href="https://www.arcgis.com/home/item.html?id=86815de825f74309aa580033dbbff44e" target="_blank" rel="noreferrer">Esri 公開副本</a>於 2022 年更新，部分原始資料可能更舊，亦非政府即時 API。線距較密不等於精度較高；為保留 20 米 HM20C 參考，暫不取代現有圖層。</p></div></div><div className="about-warning"><AlertTriangle size={17}/><span>沿徑磁石依賴 BRouter／OpenStreetMap 路網及網絡，並不保證山徑可通行或安全；直線路點及方位線不是山徑。地圖資料可能有誤或過時，出發前請核對官方資訊，帶備紙本地圖及指南針。</span></div><p className="modal-footnote">使用地政總署地圖須遵守 <a href="https://portal.csdi.gov.hk/csdi-webpage/doc/TNC" target="_blank" rel="noreferrer">LandsD Map API 使用條款</a>。<br/><a href="/third-party-licenses.txt" target="_blank" rel="noreferrer">第三方軟件授權</a>。</p></Modal>}
   </div>;
 }
 

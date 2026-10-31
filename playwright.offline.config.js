@@ -17,6 +17,7 @@ export default defineConfig({
   },
   webServer: {
     command: 'npm run preview -- --port 5177 --strictPort',
+    env: { LEADER_PASSWORD: 'playwright-only-test-secret' },
     url: 'http://127.0.0.1:5177',
     reuseExistingServer: true,
     timeout: 30_000,

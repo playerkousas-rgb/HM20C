@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
+import leaderHandler from './api/leader.js';
 
 // Cache the exact production shell (including self-hosted font subsets), not a
 // stale hand-maintained list of hashed files. Map data has its own caches.
@@ -23,8 +24,23 @@ function offlineWorker() {
   };
 }
 
+// The same Node handler runs locally and as /api/leader on Vercel. Browser
+// code always uses a relative URL, including in Arena's HTTPS preview proxy.
+function localLeaderApi() {
+  const middleware = (server) => {
+    server.middlewares.use('/api/leader', (req, res) => {
+      const localEnv = loadEnv(server.config.mode, server.config.root, 'LEADER_PASSWORD');
+      void leaderHandler(req, res, { password: process.env.LEADER_PASSWORD ?? localEnv.LEADER_PASSWORD }).catch(() => {
+        if (!res.headersSent) { res.statusCode = 500; res.setHeader('Cache-Control', 'no-store'); }
+        res.end();
+      });
+    });
+  };
+  return { name: 'local-leader-api', configureServer: middleware, configurePreviewServer: middleware };
+}
+
 export default defineConfig({
-  plugins: [offlineWorker()],
+  plugins: [offlineWorker(), localLeaderApi()],
   server: { host: '0.0.0.0', allowedHosts: true },
   preview: { host: '0.0.0.0', allowedHosts: true },
   test: { environment: 'jsdom', include: ['tests/**/*.test.js'] },

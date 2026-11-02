@@ -90,12 +90,19 @@ test('rotates tiles, labels and contours together; clicks and points remain geor
   expect(Math.abs((north.y - start.y) + projectedPixels * Math.cos(theta))).toBeLessThan(1.5);
   expect(await contourDistanceTo(page, start)).toBeLessThan(3);
 
-  await page.getByRole('button', { name: '兩點方位直線' }).click();
+  const bearingTool = page.getByRole('button', { name: '兩點方位直線' });
+  await bearingTool.click();
+  // Wait for React to activate the tool before exercising Leaflet's click.
+  await expect(bearingTool).toHaveAttribute('aria-pressed', 'true');
   const map = page.locator('.map-canvas');
   const box = await map.boundingBox();
   const tap = { x: box.x + 275, y: box.y + 265 };
+  const hit = await page.evaluate(({ x, y }) => document.elementsFromPoint(x, y).map((element) => ({
+    tag: element.tagName, class: typeof element.className === 'string' ? element.className : element.getAttribute('class'),
+    aria: element.getAttribute('aria-label'),
+  })), tap);
   await page.mouse.click(tap.x, tap.y);
-  await expect(page.locator('.bearing-marker-a')).toHaveCount(1);
+  await expect(page.locator('.bearing-marker-a'), `Hit test at ${JSON.stringify(tap)}: ${JSON.stringify(hit)}`).toHaveCount(1);
   const added = await centreOf(page.locator('.bearing-marker-a'));
   expect(Math.hypot(added.x - tap.x, added.y - tap.y)).toBeLessThan(2);
 });

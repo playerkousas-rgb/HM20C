@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import QRCode from 'qrcode';
 import { exerciseUrl } from '../../src/lib/exercise';
-import { answerShare, questionShare } from '../../src/lib/questionSet';
+import { answerPacket, answerShare, questionShare, standaloneAnswerPacket } from '../../src/lib/questionSet';
 
 // These are deliberately synthetic fixtures, not real navigable map data.
 const tile = '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="#e7e8d6"/></svg>';
@@ -432,11 +432,44 @@ test('cached production app reads multi-question and matching answer QR offline 
   await expect(page.getByRole('dialog')).not.toContainText('離線私人答案');
   await page.getByRole('button', { name: '讀取題目／答案' }).click();
   await page.getByLabel('選擇題目 QR 圖片').setInputFiles({ name: 'old-answer.png', mimeType: 'image/png', buffer: answers });
-  await expect(page.getByRole('alert')).toContainText('版本不同');
+  await expect(page.getByRole('alert')).toContainText(/版本不同|較新版本/);
   await page.getByRole('button', { name: '返回' }).click();
   await page.reload();
   await page.getByRole('button', { name: '題目', exact: true }).click();
   await page.getByRole('button', { name: /查看多題套題/ }).click();
   await expect(page.getByRole('dialog')).toContainText('版本 2');
   await expect(page.getByRole('dialog')).not.toContainText('離線私人答案');
+});
+
+
+test('an answer QR is a self-contained sheet on a fresh offline production install', async ({ page, context }) => {
+  await mockProviders(context, {}); await page.goto('/');
+  await expect.poll(() => page.evaluate(async () => Boolean((await navigator.serviceWorker.getRegistration())?.active)), {timeout:30_000}).toBe(true);
+  await page.reload();
+  const set = {id:'bbbbbbbbbbbbbbbb',name:'答案先掃',revision:1,questions:[
+    {id:'1111111111111111',type:'identify',prompt:'這格是甚麼？',reference:'50Q KK 2430 7773',points:[],answer:'涼亭'},
+    {id:'2222222222222222',type:'free',prompt:'怎樣讀圖？',reference:'',points:[],answer:'先橫後直'},
+  ]};
+  const qr = await QRCode.toBuffer(answerShare(set, [set.questions[0].id], 'http://127.0.0.1:5177/'), {width:512,margin:4});
+  await context.setOffline(true); await page.reload();
+  await page.getByRole('button',{name:'題目',exact:true}).click();
+  await page.getByRole('button',{name:/讀取題目 QR Code/}).click();
+  const oldAnswer = answerPacket(set, [set.questions[0].id]);
+  await page.getByLabel('選擇題目 QR 圖片').setInputFiles({name:'legacy.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(oldAnswer))});
+  await expect(page.getByRole('alert')).toContainText('舊版答案不屬於目前題組');
+  const selfContainedJson = standaloneAnswerPacket(set, [set.questions[0].id]);
+  await page.getByLabel('選擇題目 QR 圖片').setInputFiles({name:'answers.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(selfContainedJson))});
+  await expect(page.getByRole('dialog')).toContainText('答案先掃');
+  await expect(page.getByRole('dialog')).toContainText('涼亭');
+  await page.evaluate(() => localStorage.removeItem('scout-trail-map.question-member.v1'));
+  await page.reload();
+  await page.getByRole('button',{name:'題目',exact:true}).click();
+  await page.getByRole('button',{name:/讀取題目 QR Code/}).click();
+  await page.getByLabel('選擇題目 QR 圖片').setInputFiles({name:'answer-first.png',mimeType:'image/png',buffer:qr});
+  await expect(page.getByRole('dialog')).toContainText('答案先掃');
+  await expect(page.getByRole('dialog')).toContainText('涼亭');
+  await expect(page.getByText('答案尚未公布')).toHaveCount(1);
+  await page.getByRole('button',{name:'在地圖總覽已公布答案'}).click();
+  await expect(page.locator('.question-overview-marker')).toHaveCount(1);
+  await expect(page.locator('.question-overview-marker')).toContainText('涼亭');
 });

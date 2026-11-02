@@ -1,7 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
-import '@fontsource-variable/noto-sans-tc';
+import './font-subsets.css';
 import './styles.css';
 
 // Register the production shell on first visit so that an installable PWA is

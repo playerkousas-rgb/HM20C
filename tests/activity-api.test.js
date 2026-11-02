@@ -67,12 +67,14 @@ describe('authorized question activity', () => {
   it('atomically rejects competing updates and expires after seven days', async () => {
     vi.useFakeTimers(); vi.setSystemTime(new Date('2026-11-01T00:00:00Z'));
     const store = createMemoryActivityStore();
-    const created = await request(store, { method: 'POST', body: { set } });
+    const timedToken = issueLeaderSession(password);
+    const created = await request(store, { method: 'POST', auth: timedToken, body: { set } });
+    expect(created.status).toBe(201);
     const { id, ownerKey, setFingerprint } = created.body;
     const a = { ...set, revision: 2, questions: set.questions.map((q) => ({ ...q, answer: '甲' })) };
     const b = { ...set, revision: 2, questions: set.questions.map((q) => ({ ...q, answer: '乙' })) };
     const body = { id, ownerKey, expectedVersion: 1, baseFingerprint: setFingerprint, action: 'sync' };
-    const results = await Promise.all([request(store, { method: 'PUT', body: { ...body, set: a } }), request(store, { method: 'PUT', body: { ...body, set: b } })]);
+    const results = await Promise.all([request(store, { method: 'PUT', auth: timedToken, body: { ...body, set: a } }), request(store, { method: 'PUT', auth: timedToken, body: { ...body, set: b } })]);
     expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
     vi.advanceTimersByTime(7 * 24 * 60 * 60 * 1000);
     expect((await request(store, { id })).status).toBe(404);

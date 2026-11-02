@@ -1,9 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Camera, Copy, ImagePlus, MapPin, QrCode, RotateCcw, ScanLine, Share2 } from 'lucide-react';
-import QRCode from 'qrcode';
-import jsQR from 'jsqr';
 import { exerciseUrl, MAX_EXERCISE_POINTS, validateExercise } from '../lib/exercise';
 import { decodeShared } from '../lib/questionSet';
+import { loadQrDecoder, loadQrEncoder } from '../lib/qrCodec';
 
 const labels = { points: '地圖標記', bearing: '兩點方位', resection: '三角網測' };
 export function requiredPoints(kind) { return kind === 'bearing' ? 2 : kind === 'resection' ? 3 : MAX_EXERCISE_POINTS; }
@@ -31,22 +30,25 @@ export function ExerciseEditor({ draft, onChange, onMark, onCancel, onNew }) {
   const [qr, setQr] = useState(null);
   const [message, setMessage] = useState('');
   const [resetConfirm, setResetConfirm] = useState(false);
+  const qrRequest = useRef(0);
   const maximum = requiredPoints(draft.kind);
-  function update(key, value) { setQr(null); setMessage(''); onChange({ ...draft, [key]: value }); }
+  function update(key, value) { qrRequest.current += 1; setQr(null); setMessage(''); onChange({ ...draft, [key]: value }); }
   function pointName(index, name) {
     update('points', draft.points.map((point, i) => i === index ? { ...point, name } : point));
   }
   async function generate() {
+    const request = ++qrRequest.current;
     try {
       if (!enoughPoints(draft)) throw new Error(draft.kind === 'points' ? '請先在地圖標記至少一個點。' : `請先標記 ${maximum} 個地標。`);
       if (!draft.title.trim()) throw new Error('請輸入題目名稱。');
       validateExercise(draft);
       const link = exerciseUrl(draft, `${window.location.origin}${window.location.pathname}`);
       const options = { errorCorrectionLevel: 'M', margin: 4, width: 320, color: { dark: '#183b2d', light: '#ffffff' } };
+      const QRCode = await loadQrEncoder();
       if (QRCode.create(link, options).version > 17) throw new Error('QR Code 太密，請縮短題目或地點名稱。');
       const image = await QRCode.toDataURL(link, options);
-      setQr({ image, link }); setMessage('');
-    } catch (error) { setMessage(error?.message || '未能產生 QR Code。'); }
+      if (request === qrRequest.current) { setQr({ image, link }); setMessage(''); }
+    } catch (error) { if (request === qrRequest.current) setMessage(error?.message || '未能產生 QR Code。'); }
   }
   async function copy() {
     try { await navigator.clipboard.writeText(qr.link); setMessage('分享連結已複製。'); }
@@ -68,23 +70,24 @@ export function ExerciseEditor({ draft, onChange, onMark, onCancel, onNew }) {
     {draft.points.map((point, index) => <label className="exercise-name" key={index}><b>{String.fromCharCode(65 + index)}</b><input aria-label={`地點 ${String.fromCharCode(65 + index)} 名稱`} maxLength={12} value={point.name} placeholder={`地點 ${String.fromCharCode(65 + index)} 名稱（選填）`} onChange={(event) => pointName(index, event.target.value)}/></label>)}
     {message && <p className="exercise-message" role="status">{message}</p>}
     <div className="modal-actions"><button className="secondary-button" onClick={onCancel}>返回</button><button className="primary-button" onClick={generate} disabled={!enoughPoints(draft)}><QrCode size={17}/>產生 QR Code</button></div>
-    {!resetConfirm ? <button className="exercise-new" onClick={() => setResetConfirm(true)}>建立新題目</button> : <div className="exercise-reset-confirm"><span>清除目前草稿並重新開始？</span><button onClick={() => setResetConfirm(false)}>取消</button><button onClick={() => { setQr(null); setResetConfirm(false); onNew(); }}>確定</button></div>}
+    {!resetConfirm ? <button className="exercise-new" onClick={() => setResetConfirm(true)}>建立新題目</button> : <div className="exercise-reset-confirm"><span>清除目前草稿並重新開始？</span><button onClick={() => setResetConfirm(false)}>取消</button><button onClick={() => { qrRequest.current += 1; setQr(null); setResetConfirm(false); onNew(); }}>確定</button></div>}
     <p className="exercise-subtle">草稿只暫存在目前頁面，重新整理會消失；請先儲存 QR 圖片或分享連結。</p>
     {qr && <div className="exercise-qr"><strong>題目 QR Code</strong><img src={qr.image} width="320" height="320" alt="題目 QR Code"/><span>讓成員在 App 按「題目 → 讀取」。亦可用一般相機開啟連結。</span><div className="exercise-share-actions"><button onClick={share}><Share2 size={15}/>分享連結</button><button onClick={copy}><Copy size={15}/>複製</button><a href={qr.image} download="山野地圖-題目.png">下載 QR</a></div><details><summary>顯示分享連結</summary><textarea aria-label="題目分享連結" readOnly value={qr.link} rows={3}/></details><p>QR 內含題目及所有地標位置，任何人都能讀取及修改；請勿放入密碼或敏感資料。</p></div>}
   </div>;
 }
 
-export function ExerciseMarkCard({ draft, limit, onUndo, onClear, onComplete, onCancel }) {
+export function ExerciseMarkCard({ draft, limit, answer, onUndo, onClear, onComplete, onCancel }) {
   const maximum = limit || requiredPoints(draft.kind);
   const complete = limit ? draft.points.length === limit : enoughPoints(draft);
   return <div className="bearing-card exercise-mark-card" aria-label="題目地標標記">
     <div className="bearing-card-heading"><span><MapPin size={15}/> 領袖標記地標</span></div>
     <p className="bearing-hint">{draft.points.length >= maximum ? '已選滿；可返回題目編輯名稱。' : `在地圖點選 ${String.fromCharCode(65 + draft.points.length)}；拖動地圖可平移。`}（{draft.points.length}/{maximum}）</p>
+    {answer && <p className="marking-answer">領袖答案：{answer}</p>}
     <div className="bearing-card-actions"><button onClick={onUndo} disabled={!draft.points.length}>撤回一點</button><button onClick={onClear} disabled={!draft.points.length}><RotateCcw size={13}/>重選</button><button onClick={onComplete} disabled={!complete}>完成選點</button><button onClick={onCancel}>返回</button></div>
   </div>;
 }
 
-function readQrImage(image, maxDimension = 1400) {
+function readQrImage(image, jsQR, maxDimension = 1400) {
   const width = image.videoWidth || image.naturalWidth || image.width;
   const height = image.videoHeight || image.naturalHeight || image.height;
   if (!width || !height || width * height > 80_000_000) throw new Error('圖片尺寸無效或過大。');
@@ -120,6 +123,10 @@ export function ExerciseScanner({ onRead, onBack }) {
     if (busy || scanning) return;
     setError(''); setBusy(true);
     if (!navigator.mediaDevices?.getUserMedia) { setError('此瀏覽器不能開啟相機；請用 HTTPS 或選擇 QR 圖片。'); setBusy(false); return; }
+    let decoder;
+    try { decoder = await loadQrDecoder(); }
+    catch (cause) { if (live.current) { setError(cause.message); setBusy(false); } return; }
+    if (!live.current || document.hidden) { if (live.current) { setBusy(false); setError('相機已暫停；返回後可重新開啟。'); } return; }
     try {
       const result = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' } } });
       if (!live.current || document.hidden) { result.getTracks().forEach((track) => track.stop()); if (live.current) { setBusy(false); setError('相機已暫停；返回後可重新開啟。'); } return; }
@@ -131,9 +138,9 @@ export function ExerciseScanner({ onRead, onBack }) {
         if (!live.current || !stream.current) return;
         try {
           if (video.current?.readyState >= 2) {
-            const text = readQrImage(video.current, 960);
+            const text = readQrImage(video.current, decoder, 960);
             if (text) {
-              try { accept(text); return; } catch { setError('這不是有效的山野地圖題目；請對準領袖的 QR Code。'); }
+              try { accept(text); return; } catch (cause) { setError(cause?.message || '這不是有效的山野地圖題目；請對準領袖的 QR Code。'); }
             }
           }
         } catch { /* Wait for the next camera frame. */ }
@@ -151,7 +158,7 @@ export function ExerciseScanner({ onRead, onBack }) {
     if (file.size > 12 * 1024 * 1024) { setError('圖片超過 12 MB，請選較小的 QR 圖片。'); return; }
     setError(''); setBusy(true);
     if (file.name.toLowerCase().endsWith('.json') || file.type === 'application/json') {
-      try { accept(await file.text()); } catch (cause) { if (live.current) setError(cause?.message || '未能讀取 JSON。'); }
+      try { const text = await file.text(); if (live.current) accept(text); } catch (cause) { if (live.current) setError(cause?.message || '未能讀取 JSON。'); }
       finally { if (live.current) setBusy(false); }
       return;
     }
@@ -159,7 +166,9 @@ export function ExerciseScanner({ onRead, onBack }) {
     try {
       const image = new Image();
       await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; image.src = url; });
-      const text = readQrImage(image);
+      const decoder = await loadQrDecoder();
+      if (!live.current) return;
+      const text = readQrImage(image, decoder);
       if (!text) throw new Error('圖片內找不到 QR Code，請試用清晰圖片。');
       accept(text);
     } catch (cause) { if (live.current) setError(cause?.message || '未能讀取圖片，請重試。'); }

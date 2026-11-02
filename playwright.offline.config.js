@@ -3,6 +3,7 @@ import { defineConfig } from '@playwright/test';
 // Offline tests must exercise the generated production worker, not Vite dev.
 export default defineConfig({
   testDir: './tests/offline-e2e',
+  outputDir: './test-results/offline',
   timeout: 90_000,
   expect: { timeout: 15_000 },
   workers: 1,

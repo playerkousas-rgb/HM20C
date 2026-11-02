@@ -35,7 +35,8 @@ function validateQuestion(input, privateAnswers) {
   return {
     id: input.id, type: input.type, prompt: input.prompt.trim(), reference,
     points: input.points.map(({ lat, lon }) => ({ lat, lon })),
-    ...(privateAnswers ? { answer: input.answer.trim() } : {}),
+    ...(privateAnswers ? { answer: input.answer.trim(),
+      ...(input.type === 'bearing' && ['auto', 'manual'].includes(input.answerMode) ? { answerMode: input.answerMode } : {}) } : {}),
   };
 }
 

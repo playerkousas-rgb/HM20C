@@ -17,7 +17,16 @@ function run(label, args) {
   const report = { label, status: passed ? 'PASS' : 'FAIL', command: ['npm', ...args].join(' '),
     summary: output.slice(-3500), ...(result.error ? { error: result.error.message } : {}) };
   checks.push(report);
-  if (!json) console.log(`\n[${report.status}] ${label}\n${report.summary}`);
+  if (!json) {
+    console.log(`\n[${report.status}] ${label}\n${report.summary}`);
+    // Keep the failing step visible in the GitHub Checks API even when build
+    // logs or Playwright artifacts cannot be downloaded from the runner.
+    if (!passed && process.env.GITHUB_ACTIONS === 'true') {
+      const detail = `${label}\n${result.error?.message || ''}\n${output.slice(-7000)}`
+        .replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+      console.log(`::error title=Final check failed::${detail}`);
+    }
+  }
   return passed;
 }
 

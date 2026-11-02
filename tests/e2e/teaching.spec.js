@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { waitForMapReady } from './helpers';
 
 // Synthetic tiles and synthetic routing geometry. No external trail or real
 // government map is claimed to have been tested by these fixtures.
@@ -41,6 +42,7 @@ async function login(page) {
   await expect(page.locator('.leader-coordinate')).toBeVisible();
 }
 async function stroke(page, offsets) {
+  await waitForMapReady(page);
   const box = await page.locator('.map-canvas').boundingBox();
   await page.mouse.move(box.x + offsets[0][0], box.y + offsets[0][1]);
   await page.mouse.down();
@@ -89,6 +91,8 @@ test('member gets a fixed extended A/B line without numeric answers; leader can 
   await mockMaps(page); await ready(page);
   const routeBefore = await page.evaluate(() => localStorage.getItem('scout-trail-map.route.v1'));
   await page.getByRole('button', { name: '兩點方位直線' }).click();
+  await expect(page.getByRole('button', { name: '兩點方位直線' })).toHaveAttribute('aria-pressed', 'true');
+  await waitForMapReady(page);
   const box = await page.locator('.map-canvas').boundingBox();
   const a = { x: box.x + 205, y: box.y + 185 };
   const b = { x: box.x + 290, y: box.y + 300 };
@@ -248,6 +252,7 @@ test('touch-screen hand drawing and two-point markers work in a narrow mobile vi
   await page.route('https://brouter.de/brouter**', (route) => route.fulfill({ contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify(mockResult(route.request())) }));
   await ready(page);
   await page.getByRole('button', { name: '開始繪畫路線' }).click();
+  await waitForMapReady(page);
   const canvas = await page.locator('.map-canvas').boundingBox();
   const cdp = await context.newCDPSession(page);
   const path = [[90, 135], [120, 150], [165, 145], [195, 175]].map(([x, y]) => ({ x: canvas.x + x, y: canvas.y + y, id: 1 }));
@@ -259,6 +264,7 @@ test('touch-screen hand drawing and two-point markers work in a narrow mobile vi
   expect(drawn.segments[0].kind).toBe('snap');
   await page.getByRole('button', { name: '兩點方位直線' }).tap();
   await expect(page.getByRole('button', { name: '兩點方位直線' })).toHaveAttribute('aria-pressed', 'true');
+  await waitForMapReady(page);
   const box = await page.locator('.map-canvas').boundingBox();
   await page.touchscreen.tap(box.x + 215, box.y + 145);
   await expect(page.locator('.bearing-marker')).toHaveCount(1);

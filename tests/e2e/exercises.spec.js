@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import QRCode from 'qrcode';
 import { decodeExercise, exerciseUrl } from '../../src/lib/exercise';
 import { fromUtm } from '../../src/lib/utm';
+import { waitForMapReady } from './helpers';
 
 const blank = '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"/>';
 async function mockMaps(page) {
@@ -110,6 +111,8 @@ test('leader creates a named QR on one device; a member imports the QR image and
   await leader.getByLabel('題目名稱').fill('三角網測練習');
   await leader.getByLabel('題目說明').fill('量度三個地標的後視');
   await leader.getByRole('button', { name: '到地圖標記' }).click();
+  await expect(leader.getByLabel('題目地標標記')).toBeVisible();
+  await waitForMapReady(leader);
   const map = await leader.locator('.map-canvas').boundingBox();
   for (const [x, y] of [[110, 180], [160, 270], [270, 340]]) await leader.touchscreen.tap(map.x + x, map.y + y);
   await expect(leader.locator('.exercise-marker')).toHaveCount(3);
@@ -213,6 +216,8 @@ test('small touchscreen can place landmarks and rotate a handle without moving t
   const page = await context.newPage(); await mockMaps(page); await page.goto('http://127.0.0.1:5175/');
   await expect(page.locator('.source-pill')).toContainText('iB20000');
   await page.getByRole('button', { name: '三角網測法' }).click();
+  await expect(page.getByRole('button', { name: '三角網測法' })).toHaveAttribute('aria-pressed', 'true');
+  await waitForMapReady(page);
   const box = await page.locator('.map-canvas').boundingBox();
   for (const [x, y] of [[70, 160], [160, 200], [270, 225]]) await page.touchscreen.tap(box.x + x, box.y + y);
   await expect(page.locator('.resection-landmark')).toHaveCount(3);

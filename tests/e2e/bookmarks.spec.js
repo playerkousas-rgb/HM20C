@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { drawStroke, mockHiking } from './helpers';
+import { drawStroke, mockHiking, waitForMapReady } from './helpers';
 
 // Synthetic tiles and contours only; these are not real map data.
 const blankTile = '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"/>';
@@ -50,6 +50,7 @@ test('mobile reading mode makes room without changing map centre or scale, and s
   await page.getByRole('button', { name: '繪路', exact: true }).click();
   await expect(page.getByRole('button', { name: '完成繪畫' })).toBeVisible();
   await expect(marker).toHaveCount(0);
+  await waitForMapReady(page);
   await drawStroke(page, [[130, 160], [170, 180]]);
   await expect(page.locator('.stat').nth(1)).toContainText('2 點');
   await page.getByRole('button', { name: '收起路線' }).click();

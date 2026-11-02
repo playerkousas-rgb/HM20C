@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { waitForMapReady } from './helpers';
 
 // Synthetic geometry only: 100 m contours through the initial and Phoenix Hill centres.
 const blankTile = '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"/>';
@@ -92,8 +93,10 @@ test('rotates tiles, labels and contours together; clicks and points remain geor
 
   const bearingTool = page.getByRole('button', { name: '兩點方位直線' });
   await bearingTool.click();
-  // Wait for React to activate the tool before exercising Leaflet's click.
+  // The contour source can be ready before the base tiles. Both the tool and
+  // the actual base layer must be ready before a point can safely be placed.
   await expect(bearingTool).toHaveAttribute('aria-pressed', 'true');
+  await waitForMapReady(page);
   const map = page.locator('.map-canvas');
   const box = await map.boundingBox();
   const tap = { x: box.x + 275, y: box.y + 265 };
@@ -149,6 +152,8 @@ test('touch tap under rotated view adds a point at the touched location', async 
   await page.goto('/');
   await expect(page.locator('.source-pill')).toContainText('iB20000');
   await page.getByRole('button', { name: '兩點方位直線' }).click();
+  await expect(page.getByRole('button', { name: '兩點方位直線' })).toHaveAttribute('aria-pressed', 'true');
+  await waitForMapReady(page);
   const box = await page.locator('.map-canvas').boundingBox();
   const target = { x: Math.round(box.x + 240), y: Math.round(box.y + 250) };
   await page.touchscreen.tap(target.x, target.y);

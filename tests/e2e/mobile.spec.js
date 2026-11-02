@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { drawStroke, mockHiking } from './helpers';
+import { drawStroke, mockHiking, waitForMapReady } from './helpers';
 
 // The test environment does not depend on external map services. Empty tiles
 // are ONLY test fixtures, never an application fallback or navigable map.
@@ -26,6 +26,7 @@ test('draw, undo, GPX download/import, and local persistence', async ({ page }) 
   await page.goto('/');
   await expect(page.locator('.source-pill')).toContainText('iB20000 等高距');
   await page.getByRole('button', { name: '開始繪畫路線' }).click();
+  await waitForMapReady(page);
   await drawStroke(page, [[150, 220], [225, 300]]);
   await expect.poll(async () => (await page.evaluate(() => JSON.parse(localStorage.getItem('scout-trail-map.route.v1')))).segments[0]?.points.length || 0).toBeGreaterThan(1);
   await expect(page.locator('.route-marker')).toHaveCount(2);
@@ -166,9 +167,13 @@ test('manual map reading does not request or access device geolocation', async (
   await page.getByRole('button', { name: '地形圖', exact: true }).click();
   await expect(page.locator('.source-pill')).toContainText('iB20000');
   await page.getByRole('button', { name: '兩點方位直線' }).click();
+  await expect(page.getByRole('button', { name: '兩點方位直線' })).toHaveAttribute('aria-pressed', 'true');
+  await waitForMapReady(page);
   await page.locator('.map-canvas').click({ position: { x: 150, y: 260 } });
   await expect(page.locator('.bearing-marker')).toHaveCount(1);
   await page.getByRole('button', { name: '三角網測法' }).click();
+  await expect(page.getByRole('button', { name: '三角網測法' })).toHaveAttribute('aria-pressed', 'true');
+  await waitForMapReady(page);
   await page.locator('.map-canvas').click({ position: { x: 150, y: 260 } });
   await expect(page.locator('.resection-landmark')).toHaveCount(1);
   expect(await page.evaluate(() => window.geolocationAccessCount)).toBe(0);

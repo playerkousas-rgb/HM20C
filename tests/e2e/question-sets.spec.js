@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { decodeShared } from '../../src/lib/questionSet';
+import { waitForMapReady } from './helpers';
 
 const blank = '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"/>';
 async function mockMaps(page) {
@@ -136,6 +137,8 @@ test('marking a question on a rotated mobile map returns the chosen coordinate t
   await page.getByRole('button', { name: '建立題組' }).click();
   await page.getByLabel('題組名稱').fill('地圖選點');
   await page.getByRole('button', { name: '在地圖選點' }).click();
+  await expect(page.getByLabel('題目地標標記')).toBeVisible();
+  await waitForMapReady(page);
   const map = await page.locator('.map-canvas').boundingBox();
   await page.mouse.click(map.x + map.width * .35, map.y + map.height * .5);
   await expect(page.locator('.exercise-marker')).toHaveCount(1);
@@ -259,6 +262,41 @@ test('draft overview, independent answer QR/JSON, privacy, locking and GPX coexi
   await memberContext.close(); await leaderContext.close();
 });
 
+test('slow basemap clearly blocks marking until tiles finish, then accepts the same point', async ({ page }) => {
+  test.setTimeout(60_000);
+  let releaseTiles;
+  const gate = new Promise((resolve) => { releaseTiles = resolve; });
+  await mockMaps(page);
+  // Hold only the base tiles: the contour label is independent and may already
+  // say iB20000 while the basemap is still loading.
+  await page.route('**/basemap/WGS84/**', async (route) => {
+    await gate;
+    await route.fulfill({ contentType: 'image/svg+xml', body: blank }).catch(() => {});
+  });
+  try {
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await login(page); await openBank(page);
+    await page.getByRole('button', { name:'建立題組' }).click();
+    await page.getByRole('button', { name:'在地圖選點' }).click();
+    await expect(page.getByLabel('題目地標標記')).toBeVisible();
+    await expect(page.locator('.map-panel')).toHaveAttribute('data-tile-status', 'loading');
+    await expect(page.getByText('底圖載入中 · 載妥後可選點或繪路')).toBeVisible();
+    const map = await page.locator('.map-canvas').boundingBox();
+    const target = { x: map.x + map.width * .65, y: map.y + map.height * .35 };
+    await page.mouse.click(target.x, target.y);
+    await expect(page.locator('.toast')).toContainText('底圖未完整載入');
+    await expect(page.locator('.exercise-marker')).toHaveCount(0);
+    releaseTiles();
+    await waitForMapReady(page);
+    await expect(page.getByText('底圖載入中 · 載妥後可選點或繪路')).toHaveCount(0);
+    await page.mouse.click(target.x, target.y);
+    await expect(page.locator('.exercise-marker')).toHaveCount(1);
+    await expect(page.getByLabel('題目地標標記')).toContainText('領袖答案：50Q');
+  } finally {
+    releaseTiles();
+  }
+});
+
 test('bearing answers update immediately when draft points change and survive saving', async ({ page }) => {
   test.setTimeout(60_000);
   await mockMaps(page); await page.goto('/'); await login(page); await openBank(page);
@@ -266,8 +304,17 @@ test('bearing answers update immediately when draft points change and survive sa
   await page.getByLabel('題組名稱').fill('方位自動答案');
   await page.getByLabel('第 1 題題型').selectOption('bearing');
   await page.getByRole('button', { name:'在地圖選點' }).click();
+  await expect(page.getByLabel('題目地標標記')).toBeVisible();
+  await waitForMapReady(page);
   const map = await page.locator('.map-canvas').boundingBox();
-  await page.mouse.click(map.x + map.width * .35, map.y + map.height * .35);
+  const firstPoint = { x: map.x + map.width * .35, y: map.y + map.height * .35 };
+  await page.mouse.click(firstPoint.x, firstPoint.y);
+  const diagnostic = await page.evaluate(({ x, y }) => ({
+    tileStatus: document.querySelector('.map-panel')?.dataset.tileStatus,
+    message: document.querySelector('.toast')?.textContent,
+    hit: document.elementsFromPoint(x, y).map((element) => ({ tag: element.tagName, class: element.getAttribute('class'), aria: element.getAttribute('aria-label') })),
+  }), firstPoint);
+  await expect(page.locator('.exercise-marker'), `First point ${JSON.stringify(firstPoint)}: ${JSON.stringify(diagnostic)}`).toHaveCount(1);
   await page.mouse.click(map.x + map.width * .65, map.y + map.height * .5);
   await expect(page.getByLabel('題目地標標記')).toContainText('方格北前視');
   await page.getByRole('button', { name:'完成選點' }).click();
@@ -275,8 +322,10 @@ test('bearing answers update immediately when draft points change and survive sa
   const first = await preview.innerText(); expect(first).toContain('方格北前視');
   await page.getByRole('button', { name:'在地圖選點' }).click();
   await page.getByRole('button', { name:'重選' }).click();
-  await page.mouse.click(map.x + map.width * .4, map.y + map.height * .4);
-  await page.mouse.click(map.x + map.width * .3, map.y + map.height * .6);
+  await waitForMapReady(page);
+  const updatedMap = await page.locator('.map-canvas').boundingBox();
+  await page.mouse.click(updatedMap.x + updatedMap.width * .4, updatedMap.y + updatedMap.height * .4);
+  await page.mouse.click(updatedMap.x + updatedMap.width * .3, updatedMap.y + updatedMap.height * .6);
   await page.getByRole('button', { name:'完成選點' }).click();
   const second = await preview.innerText(); expect(second).not.toBe(first); expect(second).toContain('方格北前視');
   await page.getByRole('button', { name:'儲存題組' }).click();

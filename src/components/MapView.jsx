@@ -9,6 +9,7 @@ import { createUtmLayer } from '../map/utmLayer';
 import { createBearingLayer } from '../map/bearingLayer';
 import { createResectionLayer } from '../map/resectionLayer';
 import { createExerciseLayer } from '../map/exerciseLayer';
+import { createQuestionOverviewLayer } from '../map/questionOverviewLayer';
 import { routeMarkers } from '../lib/routeMarkers';
 import { inspectTiff } from '../sheets/files';
 import { createSheetLayer } from '../sheets/rasterLayer';
@@ -57,6 +58,7 @@ const MapView = forwardRef(function MapView(props, ref) {
   const bearingLayerRef = useRef(null);
   const resectionLayerRef = useRef(null);
   const exerciseLayerRef = useRef(null);
+  const questionOverviewLayerRef = useRef(null);
   const current = useRef(props);
   current.current = props;
 
@@ -66,6 +68,15 @@ const MapView = forwardRef(function MapView(props, ref) {
   }
 
   useImperativeHandle(ref, () => ({
+    bookmarkCenter() {
+      const map = mapRef.current;
+      if (!map) return null;
+      // A fast drag can still be gliding when the dialog opens. Capture one
+      // actual Leaflet centre and use it for both display and storage.
+      map.stop();
+      const centre = map.getCenter();
+      return { lat: centre.lat, lon: centre.lng };
+    },
     goTo(lat, lon) {
       mapRef.current?.panTo([lat, lon], { animate: false });
     },
@@ -148,6 +159,7 @@ const MapView = forwardRef(function MapView(props, ref) {
     bearingLayerRef.current = createBearingLayer(map);
     resectionLayerRef.current = createResectionLayer(map, () => current.current);
     exerciseLayerRef.current = createExerciseLayer(map);
+    questionOverviewLayerRef.current = createQuestionOverviewLayer(map);
 
     function updateView() {
       const centre = map.getCenter();
@@ -193,6 +205,7 @@ const MapView = forwardRef(function MapView(props, ref) {
       bearingLayerRef.current?.destroy();
       resectionLayerRef.current?.destroy();
       exerciseLayerRef.current?.destroy();
+      questionOverviewLayerRef.current?.destroy();
       contour.setEnabled(false);
       map.remove();
       mapRef.current = null;
@@ -316,6 +329,10 @@ const MapView = forwardRef(function MapView(props, ref) {
   }, [props.exercisePoints]);
 
   useEffect(() => {
+    questionOverviewLayerRef.current?.render(props.questionOverviewItems);
+  }, [props.questionOverviewItems]);
+
+  useEffect(() => {
     if (!props.leaderActive || !mapRef.current) return;
     const centre = mapRef.current.getCenter();
     current.current.onLeaderCenter({ lat: centre.lat, lon: centre.lng });
@@ -335,7 +352,7 @@ const MapView = forwardRef(function MapView(props, ref) {
     }
     function stop(event) { event.preventDefault(); event.stopPropagation(); }
     function down(event) {
-      if (active || current.current.routingBusy || !event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
+      if (!current.current.editing || active || current.current.routingBusy || !event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
       stop(event);
       const point = position(event);
       if (!isAvailablePosition({ lat: point.lat, lng: point.lon })) {
@@ -361,18 +378,26 @@ const MapView = forwardRef(function MapView(props, ref) {
       active = null;
       try { element.releasePointerCapture(event.pointerId); } catch { /* already released */ }
       preview?.remove(); preview = null;
-      if (event.type === 'pointercancel') return;
+      if (event.type === 'pointercancel' || !current.current.editing) return;
       if (exceeded) { current.current.onMapWarning('這一筆太長，請分成較短的筆畫。'); return; }
       if (!stroke.every((point) => isAvailablePosition({ lat: point.lat, lng: point.lon }))) {
         current.current.onMapWarning('筆畫離開本機圖幅，請切換圖幅或分段重畫。'); return;
       }
       current.current.onDrawStroke(stroke);
     }
+    // Pointer cancellation alone does not cancel the parallel Touch Events
+    // gesture. Prevent native touch movement during a freehand stroke too;
+    // otherwise mobile Chromium may swallow the very next control/map tap.
+    function preventNativeTouchMove(event) {
+      if (active && event.cancelable) event.preventDefault();
+    }
+    element.addEventListener('touchmove', preventNativeTouchMove, { capture: true, passive: false });
     element.addEventListener('pointerdown', down, true);
     element.addEventListener('pointermove', move, true);
     element.addEventListener('pointerup', end, true);
     element.addEventListener('pointercancel', end, true);
     return () => {
+      element.removeEventListener('touchmove', preventNativeTouchMove, true);
       element.removeEventListener('pointerdown', down, true);
       element.removeEventListener('pointermove', move, true);
       element.removeEventListener('pointerup', end, true);

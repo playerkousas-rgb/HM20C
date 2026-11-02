@@ -139,6 +139,8 @@ test('marking a question on a rotated mobile map returns the chosen coordinate t
   const map = await page.locator('.map-canvas').boundingBox();
   await page.mouse.click(map.x + map.width * .35, map.y + map.height * .5);
   await expect(page.locator('.exercise-marker')).toHaveCount(1);
+  await expect(page.locator('.exercise-marker small')).toContainText('50Q');
+  await expect(page.getByLabel('題目地標標記')).toContainText('領袖答案：50Q');
   await page.getByRole('button', { name: '完成選點' }).click();
   await expect(page.getByText(/領袖答案：50Q/)).toBeVisible();
   await page.getByRole('button', { name: '儲存題組' }).click();
@@ -179,4 +181,146 @@ test('a private backup restores a leader’s activity management on another phon
   await a.getByRole('button', { name: '確認解除連結' }).click();
   await expect(a.getByRole('button', { name: '建立連網活動' })).toBeVisible();
   await aContext.close(); await bContext.close();
+});
+
+test('draft overview, independent answer QR/JSON, privacy, locking and GPX coexist on small phones', async ({ browser }) => {
+  test.setTimeout(90_000);
+  const leaderContext = await browser.newContext({ viewport: { width: 320, height: 740 }, isMobile: true, hasTouch: true });
+  const leader = await leaderContext.newPage(); await mockMaps(leader); await leader.goto('/'); await login(leader); await openBank(leader);
+  await leader.getByRole('button', { name: '建立題組' }).click();
+  await leader.getByLabel('題組名稱').fill('獨立答案測試');
+  await leader.getByLabel('第 1 題題型').selectOption('identify');
+  await leader.getByLabel('第 1 題八位座標').fill('50Q KK 2430 7773');
+  const answer = '<img src=x onerror=alert(1)> 圖例';
+  await leader.getByLabel('第 1 題答案').fill(answer);
+  await leader.getByRole('button', { name: '新增一題' }).click();
+  await leader.getByLabel('第 2 題題點座標').fill('49Q HE 0199 6342');
+  await leader.getByRole('button', { name: '使用這個座標' }).click();
+  await leader.getByRole('button', { name: '在地圖總覽所有答案' }).click();
+  const card = leader.getByLabel('領袖答案地圖總覽');
+  await expect(card).toBeVisible();
+  await expect(leader.locator('.question-overview-marker')).toHaveCount(2);
+  await expect(leader.locator('.question-overview-marker img')).toHaveCount(0);
+  await card.locator('summary').click();
+  await expect(card).toContainText(answer);
+  await expect(card).toContainText('49Q HE 0199 6342');
+  await card.getByRole('button', { name: '移至地點' }).first().click();
+  expect(await leader.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await card.getByRole('button', { name: '返回題組' }).click();
+  await expect(leader.getByLabel('第 1 題答案')).toHaveValue(answer);
+  await leader.getByRole('button', { name: '儲存題組' }).click();
+  await leader.getByRole('button', { name: '答案 QR／JSON' }).click();
+  await leader.getByLabel('答案分享範圍').selectOption({ label: '第 1 題' });
+  const answerQr = await currentQr(leader, '離線答案');
+  const downloadEvent = leader.waitForEvent('download');
+  await leader.getByRole('button', { name: '下載離線答案 JSON' }).click();
+  const answerJson = await (await downloadEvent).createReadStream();
+  const chunks = []; for await (const chunk of answerJson) chunks.push(chunk);
+  const jsonPacket = JSON.parse(Buffer.concat(chunks).toString());
+  expect(jsonPacket.v).toBe(2); expect(jsonPacket.set.questions).toHaveLength(2); expect(jsonPacket.answers).toHaveLength(1);
+  await leader.getByRole('button', { name: '返回題組' }).click();
+  await leader.getByRole('button', { name: '在地圖總覽所有答案' }).click();
+  await leader.getByRole('button', { name: '領袖模式已開啟' }).click();
+  await leader.getByRole('button', { name: '返回成員模式' }).click();
+  await expect(leader.locator('.question-overview-marker')).toHaveCount(0);
+  await expect(leader.getByLabel('領袖答案地圖總覽')).toHaveCount(0);
+  await expect(leader.locator('body')).not.toContainText(answer);
+
+  const memberContext = await browser.newContext({ viewport: { width: 320, height: 740 }, isMobile: true, hasTouch: true });
+  const member = await memberContext.newPage(); await mockMaps(member);
+  await member.addInitScript(() => localStorage.setItem('scout-trail-map.exercise.v1', JSON.stringify({kind:'points',title:'舊題',description:'',points:[{lat:22.38,lon:114.32,name:'舊標記'}]})));
+  await member.goto('/');
+  await expect(member.locator('.exercise-marker')).toHaveCount(1);
+  const oldExercise = await member.evaluate(() => localStorage.getItem('scout-trail-map.exercise.v1'));
+  const gpx = '<gpx xmlns="http://www.topografix.com/GPX/1/1"><wpt lat="22.3835" lon="114.3225"><name>保留航點</name></wpt></gpx>';
+  await member.locator('input[type=file]').first().setInputFiles({ name:'route.gpx',mimeType:'application/gpx+xml',buffer:Buffer.from(gpx) });
+  await expect.poll(() => member.evaluate(() => localStorage.getItem('scout-trail-map.route.v1'))).toContain('保留航點');
+  const before = await member.evaluate(() => localStorage.getItem('scout-trail-map.route.v1'));
+  await member.getByRole('button', { name:'題目', exact:true }).click();
+  await member.getByRole('button', { name:/讀取題目 QR Code/ }).click();
+  await uploadQr(member, answerQr); // Deliberately no question QR first.
+  await expect(member.getByRole('dialog')).toContainText('獨立答案測試');
+  await expect(member.getByRole('dialog')).toContainText(answer);
+  await expect(member.getByText('答案尚未公布')).toHaveCount(1);
+  await member.getByRole('button', { name:'在地圖總覽已公布答案' }).click();
+  const memberCard = member.getByLabel('已公布答案地圖總覽');
+  await memberCard.locator('summary').click();
+  await expect(memberCard).toContainText(answer);
+  await expect(memberCard).toContainText('答案尚未公布');
+  await expect(member.locator('.question-overview-marker')).toHaveCount(2);
+  await expect(member.locator('.question-overview-marker img')).toHaveCount(0);
+  await expect(member.locator('.exercise-marker')).toHaveCount(0);
+  await expect(member.locator('.question-overview-marker').last()).toContainText('答案尚未公布');
+  await member.getByRole('button', { name:'關閉答案地圖總覽' }).click();
+  await expect(member.locator('.exercise-marker')).toHaveCount(1);
+  expect(await member.evaluate(() => localStorage.getItem('scout-trail-map.exercise.v1'))).toBe(oldExercise);
+  expect(await member.evaluate(() => localStorage.getItem('scout-trail-map.route.v1'))).toBe(before);
+  expect(await member.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await memberContext.close(); await leaderContext.close();
+});
+
+test('bearing answers update immediately when draft points change and survive saving', async ({ page }) => {
+  test.setTimeout(60_000);
+  await mockMaps(page); await page.goto('/'); await login(page); await openBank(page);
+  await page.getByRole('button', { name:'建立題組' }).click();
+  await page.getByLabel('題組名稱').fill('方位自動答案');
+  await page.getByLabel('第 1 題題型').selectOption('bearing');
+  await page.getByRole('button', { name:'在地圖選點' }).click();
+  const map = await page.locator('.map-canvas').boundingBox();
+  await page.mouse.click(map.x + map.width * .35, map.y + map.height * .35);
+  await page.mouse.click(map.x + map.width * .65, map.y + map.height * .5);
+  await expect(page.getByLabel('題目地標標記')).toContainText('方格北前視');
+  await page.getByRole('button', { name:'完成選點' }).click();
+  const preview = page.locator('.question-answer-preview');
+  const first = await preview.innerText(); expect(first).toContain('方格北前視');
+  await page.getByRole('button', { name:'在地圖選點' }).click();
+  await page.getByRole('button', { name:'重選' }).click();
+  await page.mouse.click(map.x + map.width * .4, map.y + map.height * .4);
+  await page.mouse.click(map.x + map.width * .3, map.y + map.height * .6);
+  await page.getByRole('button', { name:'完成選點' }).click();
+  const second = await preview.innerText(); expect(second).not.toBe(first); expect(second).toContain('方格北前視');
+  await page.getByRole('button', { name:'儲存題組' }).click();
+  await expect(page.getByRole('dialog')).toContainText(second.replace('方格北參考：', ''));
+});
+
+test('an emergency backup keeps an activity key when phone storage refuses the write', async ({ page }) => {
+  await mockMaps(page); await page.goto('/'); await login(page); await makeSet(page);
+  await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (key === 'scout-trail-map.question-activities.v1') throw new DOMException('quota', 'QuotaExceededError');
+      return original.call(this, key, value);
+    };
+  });
+  await page.getByRole('button', {name:'建立連網活動'}).click();
+  await expect(page.getByRole('alert')).toContainText('管理鑰匙未能儲存');
+  await page.getByRole('button', {name:'返回題庫'}).click();
+  const downloadEvent = page.waitForEvent('download');
+  await page.getByRole('button', {name:'私人備份'}).click();
+  const stream = await (await downloadEvent).createReadStream();
+  const parts = []; for await (const part of stream) parts.push(part);
+  const packet = JSON.parse(Buffer.concat(parts).toString());
+  const savedActivity = Object.values(packet.activities)[0];
+  expect(savedActivity.ownerKey).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  expect(packet.sha256).toMatch(/^[a-f0-9]{64}$/);
+});
+
+test('oversized self-contained QR fails clearly while JSON remains available', async ({ page }) => {
+  await mockMaps(page);
+  await page.addInitScript(() => {
+    const alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    function text() { return [...crypto.getRandomValues(new Uint8Array(150))].map((n) => alphabet[n % alphabet.length]).join(''); }
+    const questions = Array.from({length:15}, (_, i) => ({id:(i+1).toString(16).padStart(16,'0'),type:'free',prompt:text(),reference:'',points:[],answer:text()}));
+    localStorage.setItem('scout-trail-map.question-bank.v1', JSON.stringify([{id:'abcdef0123456789',name:'超長題組',revision:1,questions}]));
+  });
+  await page.goto('/'); await login(page); await openBank(page);
+  await page.getByRole('button', {name:/超長題組/}).click();
+  await page.getByRole('button', {name:'答案 QR／JSON'}).click();
+  await expect(page.getByRole('status')).toContainText('QR 太密或資料過長');
+  await expect(page.getByAltText('離線答案 QR Code')).toHaveCount(0);
+  const event = page.waitForEvent('download');
+  await page.getByRole('button',{name:'下載離線答案 JSON'}).click();
+  const stream = await (await event).createReadStream(); const parts = []; for await (const part of stream) parts.push(part);
+  const packet = JSON.parse(Buffer.concat(parts).toString());
+  expect(packet.set.questions).toHaveLength(15); expect(packet.answers).toHaveLength(15);
 });

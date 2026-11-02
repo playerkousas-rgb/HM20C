@@ -1,5 +1,3 @@
-import { fromBlob } from 'geotiff';
-import { BlobReader, ZipReader } from '@zip.js/zip.js';
 import { isSheetId, rasterGeometry, sheetCoverage, sheetUrl } from './geometry.js';
 
 // These caps are deliberately conservative for phones. Never bundle or proxy
@@ -91,6 +89,8 @@ export async function extractTiff(blob, { signal, onProgress = () => {} } = {}) 
   const kind = await magic(blob);
   if (kind === 'tiff') return blob;
   if (kind !== 'zip') throw new Error('檔案不是 TIFF 或 ZIP；官方下載可能回傳了網頁或錯誤訊息。');
+  const { BlobReader, ZipReader } = await import('@zip.js/zip.js');
+  checkAbort(signal);
   const zip = new ZipReader(new BlobReader(blob), { useWebWorkers: false });
   try {
     const entries = await zip.getEntries();
@@ -138,6 +138,8 @@ export async function inspectTiff(blob, id, { signal } = {}) {
   if (!(blob instanceof Blob) || blob.size > MAX_SHEET_BYTES || await magic(blob) !== 'tiff') throw new Error('請選擇有效的 TIFF 檔案。');
   let tiff, image;
   try {
+    const { fromBlob } = await import('geotiff');
+    checkAbort(signal);
     tiff = await fromBlob(blob, signal);
     image = await tiff.getImage();
   } catch {

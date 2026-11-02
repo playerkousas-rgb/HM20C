@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ACTIVITY_KEY, BANK_KEY, MEMBER_KEY, loadActivities, loadBank, loadMember, newQuestionSet, readActivities, readBank, saveJson, validateQuestionSet } from '../lib/questionSet';
 import { createActivity, getActivity, stopActivity, updateActivity } from '../lib/activityClient';
+import { createBankBackup, mergeBackupActivities, validateBankBackup } from '../lib/bankBackup';
 
 const idPattern = /^[A-Za-z0-9_-]{22,64}$/;
 const keyPattern = /^[A-Za-z0-9_-]{43}$/;
@@ -12,9 +13,11 @@ function metadata(previous, value, ownerKey) {
   return { id: value.id, ownerKey: ownerKey || previous?.ownerKey, version: value.version, revision: value.set.revision,
     released: value.answers.map((a) => a.id), expiresAt: value.expiresAt, setFingerprint: value.setFingerprint || previous?.setFingerprint };
 }
-function mergeSnapshot(previous, value) {
+export function mergeSnapshot(previous, value) {
   if (previous?.set.id === value.set.id && previous.set.revision > value.set.revision) return null;
   const same = previous?.set.id === value.set.id && previous.set.revision === value.set.revision;
+  // A revision is an identity, not permission to attach answers to different questions.
+  if (same && JSON.stringify(previous.set) !== JSON.stringify(value.set)) return null;
   const merged = new Map((same ? previous.answers : []).map((a) => [a.id, a]));
   for (const answer of value.answers) merged.set(answer.id, answer);
   return { set: value.set, answers: [...merged.values()], activityId: value.id, version: value.version, syncedAt: Date.now() };
@@ -53,7 +56,7 @@ export function useQuestionSets({ leaderActive, token, open, notify }) {
         if (previous?.activityId !== memberActivityId) return;
         const next = mergeSnapshot(previous, value);
         if (!next) {
-          setStatus({ error: true, message: '本機離線題目比線上版本新；請領袖先把修改同步到活動。' });
+          setStatus({ error: true, message: '本機與線上題組版本或內容不一致；請領袖先核對並同步活動。' });
         } else {
           if (previous.version && value.version > previous.version) notify(value.answers.length > previous.answers.length ? '領袖已公布答案；打開「題目」查看。' : '活動題目已更新；打開「題目」查看。');
           memberRef.current = next; setMember(next);
@@ -178,12 +181,21 @@ export function useQuestionSets({ leaderActive, token, open, notify }) {
     const next = { ...activities }; delete next[selected.id];
     if (saveActivities(next)) { setError(''); notify('已解除本機活動連結；舊活動不會因此立即結束。'); }
   }
-  function backup() { saveJson('HM20C-私人題庫備份.json', { kind: 'hm20c-private-bank', v: 1, sets: bank, activities }); }
+  async function backup() {
+    try {
+      const storedSets = readBank(); const storedActivities = readActivities();
+      const sets = storedSets || bank;
+      const currentActivities = mergeBackupActivities(storedActivities || {}, activities);
+      saveJson('HM20C-私人題庫備份.json', await createBankBackup(sets, currentActivities));
+      const warning = !storedSets || !storedActivities ? '本機資料讀取異常：備份只包括目前能讀到的內容，請仔細核對。' : '';
+      setError(warning); notify(warning || '已準備私人備份；包含答案及管理鑰匙，請妥善保管。');
+    } catch (cause) { setError(cause?.message || '未能產生私人備份。'); }
+  }
   async function importBackup(file) {
     try {
       if (file.size > 2 * 1024 * 1024) throw new Error('備份檔超過 2 MB。');
-      const raw = JSON.parse(await file.text());
-      if (raw?.kind !== 'hm20c-private-bank' || raw.v !== 1 || !Array.isArray(raw.sets) || raw.sets.length > 50 || !raw.activities || typeof raw.activities !== 'object' || Array.isArray(raw.activities)) throw new Error('不是有效的私人題庫備份。');
+      const raw = await validateBankBackup(JSON.parse(await file.text()));
+      if (raw.sets.length > 50) throw new Error('備份題組數量過多。');
       const sets = raw.sets.map((set) => validateQuestionSet(set, { privateAnswers: true }));
       if (sets.some((set) => !set) || new Set(sets.map((set) => set.id)).size !== sets.length) throw new Error('備份題目無效。');
       const latestBank = readBank();
@@ -205,7 +217,7 @@ export function useQuestionSets({ leaderActive, token, open, notify }) {
       if (nextBank.length > 50 || !safeStore(BANK_KEY, nextBank)) throw new Error('題庫未能儲存。');
       setBank(nextBank);
       if (!saveActivities({ ...activities, ...restoredActivities })) { notify('題組已還原，但活動管理資料未能儲存，請檢查手機儲存。'); return; }
-      setError(''); notify('已還原私人備份；更新活動前請先重新整理狀態。');
+      setError(''); notify(raw.verified ? '已驗證並還原私人備份；更新活動前請先重新整理狀態。' : '已還原舊版備份（未含校驗碼）；請先核對題目及活動狀態。');
     } catch (cause) { setError(cause?.message || '無法讀取私人備份。'); }
   }
   async function join(id) {
@@ -215,7 +227,7 @@ export function useQuestionSets({ leaderActive, token, open, notify }) {
     try {
       const value = await getActivity(id);
       const next = mergeSnapshot(cached, value);
-      if (!next) { setStatus({ error: true, message: '本機題目較新；請領袖先同步活動。' }); open('question-member'); return; }
+      if (!next) { setStatus({ error: true, message: '本機與線上題組版本或內容不一致；請領袖先核對並同步活動。' }); open('question-member'); return; }
       saveMember(next); setStatus({ message: `已連網同步 · ${savedAt(next.syncedAt)}` }); open('question-member');
     } catch (cause) {
       if (cached) { setStatus({ error: true, message: `${cause.message} ${savedAt(cached.syncedAt)}。` }); open('question-member'); }
@@ -224,16 +236,22 @@ export function useQuestionSets({ leaderActive, token, open, notify }) {
   }
   function receive(packet) {
     if (packet.kind === 'activity') { void join(packet.id); return; }
-    if (packet.kind === 'questions') {
+    if (packet.kind === 'questions' || (packet.kind === 'answers' && packet.v === 2)) {
       const previous = memberRef.current;
-      const same = previous?.set.id === packet.set.id && previous.set.revision === packet.set.revision;
-      const activityId = previous?.set.id === packet.set.id ? previous.activityId : null;
-      saveMember({ set: packet.set, answers: same ? previous.answers : [], activityId, version: same ? previous.version : 0, syncedAt: same ? previous.syncedAt : 0 });
-      setStatus({ message: activityId ? '已讀取離線題目，連網後會繼續同步。' : '' }); open('question-member'); return;
+      const matchingId = previous?.set.id === packet.set.id;
+      const same = matchingId && previous.set.revision === packet.set.revision;
+      if (matchingId && previous.set.revision > packet.set.revision) throw new Error('版本不同：此 QR 比手機內的題目舊，請向領袖索取新版。');
+      if (same && JSON.stringify(previous.set) !== JSON.stringify(packet.set)) throw new Error('相同版本的題目內容不同，請向領袖重新索取。');
+      const answers = new Map((same ? previous.answers : []).map((answer) => [answer.id, answer]));
+      if (packet.kind === 'answers') for (const answer of packet.answers) answers.set(answer.id, answer);
+      const activityId = matchingId ? previous.activityId : null;
+      saveMember({ set: packet.set, answers: [...answers.values()], activityId, version: same ? previous.version : 0, syncedAt: same ? previous.syncedAt : 0 });
+      setStatus({ message: activityId ? '已讀取離線資料，連網後會繼續同步。' : '' }); open('question-member'); return;
     }
     if (packet.kind === 'answers') {
+      // Compatibility with previously issued v1 answer-only QR/JSON.
       const previous = memberRef.current;
-      if (!previous || previous.set.id !== packet.setId) throw new Error('答案不屬於目前題組；請先讀取對應題目。');
+      if (!previous || previous.set.id !== packet.setId) throw new Error('舊版答案不屬於目前題組；請先讀取對應題目。');
       if (previous.set.revision !== packet.revision) throw new Error('答案與題目版本不同；請先讀取相同版本的題目。');
       if (packet.answers.some((answer) => !previous.set.questions.some((q) => q.id === answer.id))) throw new Error('答案與目前題目不相符。');
       const answers = new Map(previous.answers.map((answer) => [answer.id, answer]));

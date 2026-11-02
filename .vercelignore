@@ -1,0 +1,30 @@
+# Build sources and scripts/sync-font-subsets.mjs are required by Vite.
+# Everything below is development-only, local, secret, or map data.
+.git/
+.github/
+.vercel/
+node_modules/
+dist/
+.cache/
+coverage/
+test-results/
+playwright-report/
+tests/
+docs/
+uploads/
+.env*
+*.md
+*.bak
+*.tmp
+*.old
+*.log
+*.tif
+*.tiff
+*.TIF
+*.TIFF
+*.geotiff
+*.mbtiles
+*.pmtiles
+*.gpkg
+*.zip
+*.tar

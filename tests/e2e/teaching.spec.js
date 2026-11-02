@@ -257,9 +257,11 @@ test('touch-screen hand drawing and two-point markers work in a narrow mobile vi
   await expect(page.locator('.routing-status')).toContainText('已貼上路網');
   const drawn = await page.evaluate(() => JSON.parse(localStorage.getItem('scout-trail-map.route.v1')));
   expect(drawn.segments[0].kind).toBe('snap');
-  await page.getByRole('button', { name: '兩點方位直線' }).click();
+  await page.getByRole('button', { name: '兩點方位直線' }).tap();
+  await expect(page.getByRole('button', { name: '兩點方位直線' })).toHaveAttribute('aria-pressed', 'true');
   const box = await page.locator('.map-canvas').boundingBox();
   await page.touchscreen.tap(box.x + 215, box.y + 145);
+  await expect(page.locator('.bearing-marker')).toHaveCount(1);
   await page.touchscreen.tap(box.x + 235, box.y + 195);
   await expect(page.locator('.bearing-marker')).toHaveCount(2);
   await expect(page.locator('.bearing-answers')).toHaveCount(0);

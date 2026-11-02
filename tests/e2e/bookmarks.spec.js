@@ -76,6 +76,17 @@ test('a manually selected centre can be saved, revisited on the current basemap,
   await expect(page.getByText('書籤只保存手選座標', { exact: false })).toBeVisible();
   await page.getByLabel('書籤名稱').fill('童軍集合點');
   const shownCentre = await page.locator('.place-center').innerText();
+  const previousMapCentre = await page.locator('.map-coordinates').innerText();
+  // Simulate a late map movement/moveend after opening the dialog. The
+  // displayed snapshot and what is saved must remain the same location.
+  await page.locator('.modal-backdrop').evaluate((backdrop) => { backdrop.style.pointerEvents = 'none'; });
+  await page.mouse.move(map.x + 180, map.y + 300);
+  await page.mouse.down();
+  await page.mouse.move(map.x + 230, map.y + 340, { steps: 8 });
+  await page.mouse.up();
+  await page.locator('.modal-backdrop').evaluate((backdrop) => { backdrop.style.pointerEvents = ''; });
+  await expect(page.locator('.map-coordinates')).not.toHaveText(previousMapCentre);
+  expect(await page.locator('.place-center').innerText()).toBe(shownCentre);
   await page.getByRole('button', { name: '儲存圖心' }).click();
   await expect(page.getByRole('status')).toContainText('書籤不包含地圖資料');
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('scout-trail-map.bookmarks.v1')));

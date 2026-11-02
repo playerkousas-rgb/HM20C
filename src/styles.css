@@ -109,7 +109,7 @@ a { color: inherit; }
 .retry-inline { margin-left: 6px; text-decoration: underline; font-weight: 800; }
 .orientation-pill { display: inline-flex; align-items: center; gap: 4px; min-height: 27px; padding: 5px 8px; border: 1px solid rgba(220, 231, 216, .95); border-radius: 7px; background: rgba(255,255,251,.93); color: #6d8171; box-shadow: 0 3px 10px rgba(27, 47, 29, .06); font-size: 10px; font-weight: 700; }
 .orientation-pill:hover { background: #f1f7ed; }
-.offline-indicator { padding: 6px 8px; border: 1px solid #ead7bb; border-radius: 7px; color: #956b3f; background: #fff7e9; font-size: 10px; font-weight: 750; }
+.offline-indicator, .map-loading-indicator { padding: 6px 8px; border: 1px solid #ead7bb; border-radius: 7px; color: #956b3f; background: #fff7e9; font-size: 10px; font-weight: 750; }
 .scale-lock { position: absolute; z-index: 500; top: 22px; right: 23px; display: flex; gap: 9px; align-items: center; text-align: left; border: 1px solid rgba(220,230,219,.95); border-radius: 10px; padding: 9px 10px; color: #6e8875; background: rgba(255,255,252,.96); box-shadow: 0 4px 18px rgba(31, 56, 38, .09); }
 .scale-lock > span { display: flex; flex-direction: column; gap: 2px; }
 .scale-lock small { color: #98a99b; font-size: 9px; font-weight: 700; white-space: nowrap; }

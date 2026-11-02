@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { waitForMapReady } from './helpers';
 
 const blankTile = '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"/>';
 const R = 6378137, lat = 22.3835, lon = 114.3225;
@@ -60,7 +61,10 @@ test('panning and changing direction keep vectors and coordinates aligned', asyn
   // A selected bearing cross is fixed; it cannot move the recorded route.
   const routeBefore = await page.evaluate(() => localStorage.getItem('scout-trail-map.route.v1'));
   await page.getByRole('button', { name: '兩點方位直線' }).click();
-  const tap = { x: box.x + 200, y: box.y + 220 };
+  await expect(page.getByRole('button', { name: '兩點方位直線' })).toHaveAttribute('aria-pressed', 'true');
+  await waitForMapReady(page);
+  const currentBox = await map.boundingBox();
+  const tap = { x: currentBox.x + 200, y: currentBox.y + 220 };
   await page.mouse.click(tap.x, tap.y);
   const fixed = await point(page.locator('.bearing-marker-a'));
   await page.mouse.move(fixed.x, fixed.y); await page.mouse.down();

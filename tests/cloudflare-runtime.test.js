@@ -31,8 +31,9 @@ it('runs the bundled Worker, current Vercel verification, CORS and D1 in local w
     const db = await mf.getD1Database('ACTIVITY_DB');
     const schema = (await readFile('cloudflare/schema.sql', 'utf8')).replace(/^--.*$/gm, '');
     for (const sql of schema.split(';').map((value) => value.trim()).filter(Boolean)) await db.prepare(sql).run();
-    const set = { id: '0123456789abcdef', name: 'A 團練習', revision: 1, questions: [
+    const set = { id: '0123456789abcdef', name: 'A 團練習', revision: 1, libraryType: 'activity', questions: [
       { id: '1111111111111111', type: 'free', prompt: '題目', reference: '', points: [], answer: '未公布答案' },
+      { id: '2222222222222222', type: 'free', prompt: '第二題', reference: '', points: [], answer: '另一個答案' },
     ] };
     const token = (pass) => issueLeaderSession(leaderSigningSecret(pass, { LEADER_SESSION_SECRET: secret }));
     const oldToken = token(password);
@@ -46,7 +47,9 @@ it('runs the bundled Worker, current Vercel verification, CORS and D1 in local w
     const read = await mf.dispatchFetch(`https://worker.example.test/api/activity?id=${created.id}`, { headers: { origin } });
     expect(read.status).toBe(200); expect(verifyCalls).toHaveLength(callsBeforeRead);
     const publicBody = await read.text();
-    expect(publicBody).not.toContain('未公布答案'); expect(publicBody).not.toContain(created.ownerKey);
+    expect(publicBody).not.toContain('未公布答案'); expect(publicBody).not.toContain('另一個答案'); expect(publicBody).not.toContain(created.ownerKey);
+    expect(JSON.parse(publicBody).set.questions).toHaveLength(2);
+    expect(JSON.parse(publicBody).set).not.toHaveProperty('libraryType');
     const preflight = await mf.dispatchFetch('https://worker.example.test/api/activity', { method: 'OPTIONS', headers: { origin, 'access-control-request-method': 'PUT', 'access-control-request-headers': 'authorization,content-type' } });
     expect(preflight.status).toBe(204); expect(preflight.headers.get('access-control-allow-origin')).toBe(origin);
     const denied = await mf.dispatchFetch('https://worker.example.test/api/activity', { method: 'OPTIONS', headers: { origin: 'https://untrusted.example' } });

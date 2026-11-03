@@ -12,7 +12,7 @@ import PlacesContent from './components/PlacesContent';
 import LeaderContent from './components/LeaderContent';
 import BearingCard from './components/BearingCard';
 import ResectionCard from './components/ResectionCard';
-import { ExerciseEditor, ExerciseHome, ExerciseMarkCard, ExerciseScanner, requiredPoints } from './components/ExerciseContent';
+import { ExerciseHome, ExerciseMarkCard, ExerciseScanner } from './components/ExerciseContent';
 import { QuestionBank, QuestionMember, QuestionOverviewCard, QuestionSetEditor, QuestionShare } from './components/QuestionSets';
 import { useQuestionSets } from './hooks/useQuestionSets';
 import { decodeShared, questionAsExercise } from './lib/questionSet';
@@ -98,7 +98,6 @@ function App() {
   const [resectionPoints, setResectionPoints] = useState(loadResection);
   const [visibleTool, setVisibleTool] = useState(null);
   const [exerciseMarking, setExerciseMarking] = useState(false);
-  const [exerciseDraft, setExerciseDraft] = useState(null);
   const [exercise, setExercise] = useState(loadExercise);
   const [pendingExercise, setPendingExercise] = useState(null);
   const [leaderUntil, setLeaderUntil] = useState(0);
@@ -107,6 +106,7 @@ function App() {
   const [questionMarkId, setQuestionMarkId] = useState(null);
   const [questionMarkDraft, setQuestionMarkDraft] = useState(null);
   const [questionOverview, setQuestionOverview] = useState(null);
+  const [bankMode, setBankMode] = useState('activity');
   const [leaderCenter, setLeaderCenter] = useState(initialCenter);
   const [mapExpanded, setMapExpanded] = useState(false);
   const [bookmarks, setBookmarks] = useState(loadBookmarks);
@@ -203,8 +203,7 @@ function App() {
   } });
   const markingQuestion = quiz.draft?.questions.find((q) => q.id === questionMarkId);
   const markingLimit = markingQuestion ? ({ grid: 1, bearing: 2, resection: 3 }[markingQuestion.type] || null) : null;
-  const markingDraft = questionMarkId ? questionMarkDraft : exerciseDraft;
-  const updateMarkingDraft = questionMarkId ? setQuestionMarkDraft : setExerciseDraft;
+  const markingDraft = questionMarkDraft;
   const centerReference = leaderActive ? gridReference(leaderCenter) : null;
   // Never render private answers if the leader session has expired.
   const visibleOverview = questionOverview?.audience === 'leader' && !leaderActive ? null : questionOverview;
@@ -333,26 +332,12 @@ function App() {
     setResectionPoints((old) => old.map((point, i) => i === index ? { ...point, angle, set: true } : point));
   }
 
-  function newExerciseDraft() { return { kind: 'points', title: '', description: '', points: [] }; }
-  function editExercise() {
-    if (!leaderActive) { notify('請先登入領袖模式。'); return; }
-    setQuestionMarkId(null); setQuestionMarkDraft(null);
-    if (!exerciseDraft) setExerciseDraft(newExerciseDraft());
-    setModal('exercise-edit');
-  }
-  function markExercise() {
-    setQuestionOverview(null);
-    if (!leaderActive || !exerciseDraft) return;
-    cancelRouting('沿徑計算已取消；現有路線沒有被覆蓋。');
-    setEditing(false); setBearingActive(false); setResectionActive(false); setVisibleTool('exercise');
-    setExerciseMarking(true); setMapExpanded(true); setModal(null);
-  }
   function addExercisePoint(point) {
-    if (!leaderActive || !markingDraft) return;
+    if (!leaderActive || !markingDraft || !markingLimit) return;
     if (tileStatus !== 'ready') { notify('底圖未完整載入，請先檢查地圖。'); return; }
     if (!inHongKongGrid(point)) { notify('請在香港 UTM 範圍內標記地點。'); return; }
     if (markingQuestion && markingQuestion.type !== 'grid' && markingDraft.points.some((other) => distanceMeters(other, point) < 10)) { notify('地標須相距至少 10 米。'); return; }
-    updateMarkingDraft((old) => old.points.length < (markingLimit || requiredPoints(old.kind)) ? { ...old, points: [...old.points, { ...point, name: '' }] } : old);
+    setQuestionMarkDraft((old) => old && old.points.length < markingLimit ? { ...old, points: [...old.points, { ...point, name: '' }] } : old);
   }
   function markQuestion(questionId) {
     setQuestionOverview(null);
@@ -386,13 +371,11 @@ function App() {
   }
   function finishMarking(apply) {
     setExerciseMarking(false);
-    if (questionMarkId) {
-      if (apply && questionMarkDraft && quiz.draft) {
-        const points = questionMarkDraft.points.map(({ lat, lon }) => ({ lat, lon }));
-        quiz.setDraft({ ...quiz.draft, questions: quiz.draft.questions.map((q) => q.id === questionMarkId ? { ...q, points, pointText: points[0] ? (gridReference(points[0])?.text || '') : '' } : q) });
-      }
-      setQuestionMarkId(null); setQuestionMarkDraft(null); setModal('question-edit');
-    } else setModal('exercise-edit');
+    if (questionMarkId && apply && questionMarkDraft && quiz.draft) {
+      const points = questionMarkDraft.points.map(({ lat, lon }) => ({ lat, lon }));
+      quiz.setDraft({ ...quiz.draft, questions: quiz.draft.questions.map((q) => q.id === questionMarkId ? { ...q, points, pointText: points[0] ? (gridReference(points[0])?.text || '') : '' } : q) });
+    }
+    setQuestionMarkId(null); setQuestionMarkDraft(null); setModal('question-edit');
   }
   function showExercise(task, { preserveLines = false } = {}) {
     setQuestionOverview(null);
@@ -765,7 +748,7 @@ function App() {
         {editing && <div className="drawing-indicator"><span/><Pencil size={14}/> {routingBusy ? '正在貼合山徑…' : '沿山徑拖畫 · 放手貼路'}</div>}
         {visibleTool === 'bearing' && <BearingCard points={bearingPoints} names={bearingNames} active={bearingActive} leader={leaderActive} onReset={() => { setBearingPoints([]); setBearingNames([]); }} onFinish={() => setBearingActive(false)} onResume={openBearing}/>}
         {visibleTool === 'resection' && <ResectionCard points={resectionPoints} active={resectionActive} onAngle={updateResectionAngle} onReset={() => setResectionPoints([])} onFinish={() => setResectionActive(false)} onResume={openResection}/>}
-        {exerciseMarking && markingDraft && <ExerciseMarkCard draft={markingDraft} limit={markingLimit} answer={markingAnswer} onUndo={() => updateMarkingDraft((old) => ({ ...old, points: old.points.slice(0, -1) }))} onClear={() => updateMarkingDraft((old) => ({ ...old, points: [] }))} onComplete={() => finishMarking(true)} onCancel={() => finishMarking(false)}/>}
+        {exerciseMarking && markingDraft && <ExerciseMarkCard draft={markingDraft} limit={markingLimit} answer={markingAnswer} onUndo={() => setQuestionMarkDraft((old) => old && ({ ...old, points: old.points.slice(0, -1) }))} onClear={() => setQuestionMarkDraft((old) => old && ({ ...old, points: [] }))} onComplete={() => finishMarking(true)} onCancel={() => finishMarking(false)}/>}
 
         {visibleOverview && <QuestionOverviewCard items={visibleOverview.items} audience={visibleOverview.audience} onGo={(point) => mapRef.current?.goTo(point.lat, point.lon)} onReturn={returnFromQuestionOverview} onClose={() => setQuestionOverview(null)}/>}
         {leaderActive && <div className="leader-coordinate" aria-label="領袖圖心八位座標"><small>領袖 · 圖心八位座標（不是 GPS）</small><strong>{centerReference?.text || '圖心超出香港 UTM 範圍'}</strong><span>WGS84 UTM · 10 米方格</span></div>}
@@ -776,16 +759,20 @@ function App() {
       </section>
     </main>
 
-    <nav className="mobile-nav" aria-label="主要功能"><button className={!editing && !modal ? 'active' : ''} onClick={() => { cancelRouting('沿徑計算已取消；現有路線沒有被覆蓋。'); setEditing(false); setBearingActive(false); setResectionActive(false); setExerciseMarking(false); setVisibleTool(null); setModal(null); setMapExpanded(true); }}><MapIcon size={20}/><span>地圖</span></button><button className={editing ? 'active' : ''} onClick={toggleDrawing}><Pencil size={19}/><span>繪路</span></button><button className={modal === 'gpx' ? 'active' : ''} onClick={() => setModal('gpx')}><FolderOpen size={20}/><span>GPX</span></button><button className={modal?.startsWith('exercise') ? 'active' : ''} onClick={() => setModal('exercise')}><QrCode size={20}/><span>題目</span></button><button className={modal === 'about' ? 'active' : ''} onClick={() => setModal('about')}><Info size={20}/><span>說明</span></button></nav>
+    <nav className="mobile-nav" aria-label="主要功能"><button className={!editing && !modal ? 'active' : ''} onClick={() => { cancelRouting('沿徑計算已取消；現有路線沒有被覆蓋。'); setEditing(false); setBearingActive(false); setResectionActive(false); setExerciseMarking(false); setVisibleTool(null); setModal(null); setMapExpanded(true); }}><MapIcon size={20}/><span>地圖</span></button><button className={editing ? 'active' : ''} onClick={toggleDrawing}><Pencil size={19}/><span>繪路</span></button><button className={modal === 'gpx' ? 'active' : ''} onClick={() => setModal('gpx')}><FolderOpen size={20}/><span>GPX</span></button><button className={modal?.startsWith('exercise') || modal?.startsWith('question') ? 'active' : ''} onClick={() => setModal('exercise')}><QrCode size={20}/><span>題目</span></button><button className={modal === 'about' ? 'active' : ''} onClick={() => setModal('about')}><Info size={20}/><span>說明</span></button></nav>
     <input type="file" ref={fileRef} accept=".gpx,application/gpx+xml,application/xml,text/xml" hidden onChange={importFile}/>
     {toast && <div className="toast" role="status">{toast}</div>}
 
     {modal === 'leader' && <Modal eyebrow="LEADER MODE" title="領袖模式" onClose={() => setModal(null)}><LeaderContent active={leaderActive} onUnlock={(seconds, token) => { leaderTokenRef.current = token; setLeaderToken(token); setLeaderUntil(Date.now() + seconds * 1000); setModal(null); notify('領袖模式已開啟；圖心不是你的位置。'); }} onLock={() => { leaderTokenRef.current = null; setLeaderToken(null); setLeaderUntil(0); setModal(null); notify('已返回成員模式。'); }}/></Modal>}
-    {modal === 'exercise' && <Modal eyebrow="MAP EXERCISES" title="題目與 QR Code" onClose={() => setModal(null)}><ExerciseHome leader={leaderActive} exercise={exercise} memberSet={quiz.member?.set} onCreate={editExercise} onBank={() => { quiz.select(null); setModal('question-bank'); }} onMember={() => setModal('question-member')} onScan={() => setModal('exercise-scan')} onRestore={() => exercise && showExercise(exercise, { preserveLines: true })} onClear={() => setModal('exercise-clear')} onGoPoint={(point, index) => { mapRef.current?.goTo(point.lat, point.lon); setModal(null); setMapExpanded(true); notify(`已移至題目地點 ${String.fromCharCode(65 + index)}；比例保持鎖定。`); }}/></Modal>}
-    {modal === 'exercise-edit' && <Modal eyebrow="LEADER EXERCISE" title="領袖設題" onClose={() => setModal(null)}>{leaderActive && exerciseDraft ? <ExerciseEditor draft={exerciseDraft} onChange={setExerciseDraft} onMark={markExercise} onNew={() => setExerciseDraft(newExerciseDraft())} onCancel={() => setModal('exercise')}/> : <p className="modal-intro">領袖模式已結束，請重新登入後繼續設題。</p>}</Modal>}
+    {modal === 'exercise' && <Modal eyebrow="MAP EXERCISES" title="題目與 QR Code" onClose={() => setModal(null)}><ExerciseHome leader={leaderActive} exercise={exercise} memberSet={quiz.member?.set} onBank={(mode) => { quiz.select(null); setBankMode(mode); setModal('question-bank'); }} onMember={() => setModal('question-member')} onScan={() => setModal('exercise-scan')} onRestore={() => exercise && showExercise(exercise, { preserveLines: true })} onClear={() => setModal('exercise-clear')} onGoPoint={(point, index) => { mapRef.current?.goTo(point.lat, point.lon); setModal(null); setMapExpanded(true); notify(`已移至題目地點 ${String.fromCharCode(65 + index)}；比例保持鎖定。`); }}/></Modal>}
     {modal === 'exercise-scan' && <Modal eyebrow="SCAN EXERCISE" title="讀取題目" onClose={() => setModal(null)}><ExerciseScanner onRead={receiveShared} onBack={() => setModal('exercise')}/></Modal>}
-    {modal === 'question-bank' && <Modal eyebrow="LEADER QUESTION BANK" title="領袖題庫" onClose={() => setModal(null)}>{leaderActive ? <QuestionBank sets={quiz.bank} selected={quiz.selected} activity={quiz.activity} busy={quiz.busy} error={quiz.error} hasDraft={quiz.hasDraft} onResumeDraft={quiz.resumeDraft} onSelect={quiz.select} onCreate={quiz.create} onEdit={quiz.edit} onDuplicate={quiz.duplicate} onDelete={quiz.remove} onBack={() => quiz.select(null)} onOverview={() => showQuestionOverview('bank')} onShare={quiz.share} onCreateActivity={quiz.createOnline} onExtendActivity={quiz.extend} onSync={quiz.sync} onRefresh={quiz.refresh} onRelease={quiz.release} onStopActivity={quiz.stopOnline} onUnlinkActivity={quiz.unlinkOnline} onBackup={quiz.backup} onImport={quiz.importBackup}/> : <p className="modal-intro">領袖模式已結束；請重新解鎖以管理題庫。</p>}</Modal>}
-    {modal === 'question-edit' && <Modal eyebrow="EDIT QUESTION SET" title="編輯題組" onClose={() => setModal('question-bank')}>{leaderActive && quiz.draft ? <QuestionSetEditor draft={quiz.draft} busy={quiz.busy} onChange={quiz.setDraft} onMark={markQuestion} onOverview={() => showQuestionOverview('draft')} onSave={quiz.save} onCancel={() => setModal('question-bank')}/> : <p className="modal-intro">領袖模式已結束；草稿仍保留在本頁。</p>}</Modal>}
+    {modal === 'question-bank' && <Modal eyebrow="LEADER QUESTION BANK" title={bankMode === 'fixed' ? '固定題庫' : '活動題庫'} onClose={() => setModal(null)}>{leaderActive ? <QuestionBank mode={bankMode} sets={quiz.bank} activities={quiz.activities} selected={quiz.selected} activity={quiz.activity} busy={quiz.busy} error={quiz.error} hasDraft={quiz.hasDraft} draftMode={quiz.draftMode}
+      onResumeDraft={() => { setBankMode(quiz.draftMode || bankMode); quiz.resumeDraft(); }} onSelect={quiz.select} onCreate={() => quiz.create(bankMode)}
+      onEdit={() => { const mode = quiz.edit(bankMode); if (mode) setBankMode(mode); }} onDuplicate={() => quiz.duplicate(bankMode)}
+      onCopyToOther={() => { const target = bankMode === 'fixed' ? 'activity' : 'fixed'; if (quiz.duplicate(target)) setBankMode(target); }}
+      onDelete={quiz.remove} onBack={() => quiz.select(null)} onMenu={() => { quiz.select(null); setModal('exercise'); }} onOverview={() => showQuestionOverview('bank')} onShare={quiz.share}
+      onCreateActivity={quiz.createOnline} onExtendActivity={quiz.extend} onSync={quiz.sync} onRefresh={quiz.refresh} onRelease={quiz.release} onStopActivity={quiz.stopOnline} onUnlinkActivity={quiz.unlinkOnline} onBackup={quiz.backup} onImport={quiz.importBackup}/> : <p className="modal-intro">領袖模式已結束；請重新解鎖以管理題庫。</p>}</Modal>}
+    {modal === 'question-edit' && <Modal eyebrow="EDIT QUESTION SET" title="編輯題組" onClose={() => setModal('question-bank')}>{leaderActive && quiz.draft ? <QuestionSetEditor draft={quiz.draft} busy={quiz.busy} onChange={quiz.setDraft} onMark={markQuestion} onOverview={() => showQuestionOverview('draft')} onSave={(set) => quiz.save(set, bankMode)} onCancel={() => setModal('question-bank')}/> : <p className="modal-intro">領袖模式已結束；草稿仍保留在本頁。</p>}</Modal>}
     {modal === 'question-share' && <Modal eyebrow="SHARE QUESTION SET" title="分享題組" onClose={() => setModal('question-bank')}>{leaderActive && quiz.selected ? <QuestionShare mode={quiz.shareMode} set={quiz.selected} activity={quiz.activity} onBack={() => setModal('question-bank')}/> : <p className="modal-intro">請先解鎖領袖模式。</p>}</Modal>}
     {modal === 'question-member' && <Modal eyebrow="QUESTION SET" title="多題套題" onClose={() => setModal(null)}>{quiz.member ? <QuestionMember member={quiz.member} status={quiz.status} busy={quiz.memberBusy} onRefresh={quiz.refreshMember} onView={(question) => { const task = questionAsExercise(question); if (task) receiveExercise(task); else notify('此題沒有可顯示的地圖標記。'); }} onOverview={() => showQuestionOverview('member')} onScan={() => setModal('exercise-scan')} onBack={() => setModal('exercise')}/> : <p className="modal-intro">請先讀取題組或活動 QR。</p>}</Modal>}
     {modal === 'exercise-clear' && <Modal eyebrow="CLEAR EXERCISE" title="清除這題？" onClose={() => setModal('exercise')}><p className="modal-intro">這會移除題目標記，以及屬於此題的方位或三角地標及方向；路線與 GPX 不受影響。</p><div className="modal-actions"><button className="secondary-button" onClick={() => setModal('exercise')}>取消</button><button className="primary-button" onClick={clearExercise}>清除題目</button></div></Modal>}

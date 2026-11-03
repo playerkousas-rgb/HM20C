@@ -137,12 +137,13 @@ export function useQuestionSets({ leaderActive, token, open, notify, onUnauthori
         const next = { ...activities, [nextSet.id]: metadata(record, result) };
         if (saveActivities(next)) notify('題組已儲存並同步；答案需重新公布。');
       } catch (cause) {
-        setError(`本機已儲存，但未同步：${cause.message}`);
+        setError(`題組已儲存在本機，但同步失敗：${cause.message} 請連網後按「重試同步題目」；如有版本衝突，請到進階處理重新整理狀態並核對。`);
         if (cause.code === 'unauthorized' && token) onUnauthorized?.(token);
-        else notify('題組只儲存在本機；請稍後更新活動。');
+        else notify('題組只儲存在本機；請稍後重試同步題目。');
       }
       finally { setBusy(false); }
-    } else notify(record ? '題組已存在本機；連網後請更新活動。' : '題組已儲存在本機。');
+    } else if (record) { setError('題組已儲存在本機，但尚未同步；請連網後按「重試同步題目」。'); notify('題組只儲存在本機；請稍後重試同步題目。'); }
+    else notify('題組已儲存在本機。');
   }
   function duplicate(mode) {
     if (!selected || !leaderActive || busy || !LIBRARY_TYPES.includes(mode)) return false;
@@ -189,7 +190,7 @@ export function useQuestionSets({ leaderActive, token, open, notify, onUnauthori
     setBusy(true); setError('');
     try {
       const result = await updateActivity(activity, action, data, token);
-      if (saveActivities({ ...activities, [selected.id]: metadata(activity, result) })) notify(action === 'release' ? '答案已公布；請成員連網後按「更新題目及答案」。' : action === 'extend' ? '期限已延長；活動 QR 不變。' : '活動題目已更新；請成員手動更新。');
+      if (saveActivities({ ...activities, [selected.id]: metadata(activity, result) })) notify(action === 'release' ? '答案已公布；請成員連網後按「更新題目及答案」。' : action === 'extend' ? '期限已延長；活動 QR 不變。' : '活動題目已同步；之前公布的答案需要重新公布，請成員手動更新。');
     } catch (cause) { writeError(cause); }
     finally { setBusy(false); }
   }

@@ -19,7 +19,7 @@ function nextExpiry(activity) {
   return localDateTime(Math.min(Math.max(now, activity?.expiresAt || now) + 7 * DAY_MS, now + 365 * DAY_MS - 60_000));
 }
 
-export function QuestionSetEditor({ draft, busy, onChange, onMark, onOverview, onSave, onCancel }) {
+export function QuestionSetEditor({ draft, mode, busy, onChange, onMark, onOverview, onSave, onCancel }) {
   const [error, setError] = useState('');
   const [addedId, setAddedId] = useState(null);
   const cards = useRef({});
@@ -62,6 +62,7 @@ export function QuestionSetEditor({ draft, busy, onChange, onMark, onOverview, o
   }
   return <div className="question-editor">
     <p className="modal-intro">這是<strong>一套多題題組</strong>。每題可選不同題型；可再建立其他題組，每套各有自己的 QR。</p>
+    {mode === 'activity' && <p className="question-warning">這是各旅團共用的資源。活動完成後，請按『結束連網活動』。</p>}
     <p className="question-editor-note">每套最多 {MAX_QUESTIONS} 題。固定 QR 能否放下全部題目，亦取決於內容長度；過密時可分組或用 JSON。</p>
     <label>題組名稱<input aria-label="題組名稱" value={draft.name} maxLength={48} placeholder="例如：西貢讀圖練習" onChange={(e) => onChange({ ...draft, name: e.target.value })}/></label>
     <div className="question-editor-toolbar">
@@ -125,6 +126,7 @@ export function QuestionBank({ mode, sets, activities, selected, activity, busy,
         <small>每套可分別下載 QR；題目太長或太多會過密，請分組或使用 JSON。</small>
       </div> : <div className="question-online">
         <strong>活動題庫 · 連網活動</strong>
+        <p className="question-warning">這是各旅團共用的資源。活動完成後，請按『結束連網活動』。</p>
         <p>每套可建立獨立活動 QR。更新題目或到期前延長期限時，這個活動 QR 不變；成員須連網手動更新。</p>
         {!activity ? <>
           <label className="question-expiry">活動到期時間<input aria-label="活動到期時間" type="datetime-local" value={expiry} onChange={(e) => setExpiry(e.target.value)}/></label>
@@ -132,14 +134,20 @@ export function QuestionBank({ mode, sets, activities, selected, activity, busy,
           <button className="secondary-button" disabled={busy || !Number.isFinite(Date.parse(expiry))} onClick={() => onCreateActivity(Date.parse(expiry))}>建立連網活動</button>
         </> : <>
           <p>活動版本 {activity.version} · 線上題組版本 {activity.revision}{activity.expiresAt ? ` · ${new Date(activity.expiresAt).toLocaleString('zh-HK')} 到期` : ''}</p>
+          <div className="question-actions"><button onClick={() => onShare('activity')}><QrCode size={15}/>分享活動 QR</button></div>
+          {activity.revision !== selected.revision && <div className="question-retry" role="status"><p className="question-unsynced">本機題組尚未同步至活動。連網後請重試；同步後須重新公布之前的答案。</p><button className="secondary-button" onClick={onSync} disabled={busy}><RefreshCw size={15}/>重試同步題目</button></div>}
+          <div className="question-release"><span>公布答案（成員須手動更新）：</span><button disabled={busy || activity.revision !== selected.revision} onClick={() => onRelease(selected.questions.map((q) => q.id))}>公布全部答案</button>{selected.questions.map((q, i) => <button key={q.id} disabled={busy || activity.revision !== selected.revision || activity.released?.includes(q.id)} onClick={() => onRelease([q.id])}>{activity.released?.includes(q.id) ? `第 ${i + 1} 題已公布` : `公布第 ${i + 1} 題`}</button>)}</div>
           <label className="question-expiry">延長至<input aria-label="延長活動到期時間" type="datetime-local" value={expiry} onChange={(e) => setExpiry(e.target.value)}/></label>
           <button className="secondary-button" disabled={busy || !Number.isFinite(Date.parse(expiry))} onClick={() => onExtendActivity(Date.parse(expiry))}>延長活動期限</button>
-          <small>須在到期前延長。到期後先解除本機活動連結再建立新活動；結束後亦可重新建立，均須換 QR。</small>
-          {activity.revision !== selected.revision && <p className="question-unsynced">本機題組有未同步修改；更新後需重新公布答案。</p>}
-          <div className="question-actions"><button onClick={() => onShare('activity')}><QrCode size={15}/>活動 QR</button><button onClick={onSync} disabled={busy}><RefreshCw size={15}/>更新活動題目</button><button onClick={onRefresh} disabled={busy}>重新整理狀態</button></div>
-          {!confirmStop ? <button className="text-button" onClick={() => setConfirmStop(true)} disabled={busy}>結束連網活動</button> : <div className="question-release"><span>結束後舊活動 QR 失效；已公布的答案仍可能留在手機。</span><button disabled={busy} onClick={() => { setConfirmStop(false); onStopActivity(); }}>確認結束活動</button><button onClick={() => setConfirmStop(false)}>取消結束</button></div>}
-          {!confirmUnlink ? <button className="text-button" onClick={() => setConfirmUnlink(true)} disabled={busy}>解除本機活動連結</button> : <div className="question-release"><span>會移除本機管理鑰匙；舊活動仍可用至到期，先備份或先結束活動。</span><button disabled={busy} onClick={() => { setConfirmUnlink(false); onUnlinkActivity(); }}>確認解除連結</button><button onClick={() => setConfirmUnlink(false)}>取消解除</button></div>}
-          <div className="question-release"><span>線上公布答案：</span><button disabled={busy || activity.revision !== selected.revision} onClick={() => onRelease(selected.questions.map((q) => q.id))}>公布全部答案</button>{selected.questions.map((q, i) => <button key={q.id} disabled={busy || activity.revision !== selected.revision || activity.released?.includes(q.id)} onClick={() => onRelease([q.id])}>{activity.released?.includes(q.id) ? `第 ${i + 1} 題已公布` : `公布第 ${i + 1} 題`}</button>)}</div>
+          <small>須在到期前延長，活動 QR 不變。到期後要先解除本機連結，再建立新活動並分享新 QR。</small>
+          {!confirmStop ? <button className="text-button question-stop" onClick={() => setConfirmStop(true)} disabled={busy}>結束連網活動</button> : <div className="question-release question-confirm"><span>確認結束？雲端活動及舊活動 QR 會失效；領袖手機題組和已下載的離線副本保留。</span><button disabled={busy} onClick={() => { setConfirmStop(false); onStopActivity(); }}>確認結束活動</button><button onClick={() => setConfirmStop(false)}>取消結束</button></div>}
+          <details className="question-advanced"><summary>進階處理</summary>
+            <p>重新整理狀態：從雲端讀取活動版本及公布狀態；多部裝置出現衝突時先用此功能核對，不會取代本機題組。</p>
+            <button className="text-button" onClick={onRefresh} disabled={busy}>重新整理狀態</button>
+            <p>解除本機活動連結：只移除這部手機的活動管理資料，不會結束雲端活動。請先下載私人備份，或先結束活動。</p>
+            <div className="question-actions"><button onClick={onBackup} disabled={busy}><Download size={15}/>私人備份</button>{!confirmUnlink && <button onClick={() => setConfirmUnlink(true)} disabled={busy}>解除本機活動連結</button>}</div>
+            {confirmUnlink && <div className="question-release question-confirm"><span>解除不等於結束活動：本機管理資料（包括管理鑰匙）會被移除，雲端活動仍存在。請先備份，否則可能無法再管理或結束活動。</span><button disabled={busy} onClick={() => { setConfirmUnlink(false); onUnlinkActivity(); }}>確認解除連結</button><button onClick={() => setConfirmUnlink(false)}>取消解除</button></div>}
+          </details>
         </>}
         <strong>離線後備</strong>
         <p>出發前下載固定題目 QR 和答案 QR；答案請由領袖保管。</p>
@@ -154,6 +162,7 @@ export function QuestionBank({ mode, sets, activities, selected, activity, busy,
       {confirm && <p className="question-unsynced">刪除本機題組和管理鑰匙；線上活動會在到期後失效，背景清理可能延遲，請先備份。</p>}
     </> : <>
       <p className="modal-intro">{fixed ? '建立多套固定題組，每套可放多題，並各有獨立的題目及答案 QR。改題後需重新分享。' : '建立多套活動題組，每套可放多題及建立獨立活動 QR。領袖可連網改題，成員手動更新。'}</p>
+      {!fixed && <p className="question-warning">這是各旅團共用的資源。活動完成後，請按『結束連網活動』。</p>}
       <div className="question-actions"><button className="primary-button" onClick={onCreate} disabled={busy}><Plus size={16}/>建立題組</button><button onClick={onBackup}><Download size={15}/>私人備份</button><button disabled={busy} onClick={() => input.current?.click()}><Upload size={15}/>還原備份</button></div>
       <input ref={input} type="file" accept=".json,application/json" aria-label="匯入私人題庫備份" hidden onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) onImport(file); }}/>
       <h3 className="question-section-heading">已儲存的題組（{visibleSets.length}）</h3>

@@ -1,6 +1,6 @@
 # HM20C 六角度檢查與待驗收
 
-記錄日期：2026-11-03（香港） · 版本：v1.2.1 · 參考 [SCOUT SYSTEM 共通規範](https://github.com/playerkousas-rgb/readme)。
+記錄日期：2026-11-03（香港） · 版本：v1.2.2 · 參考 [SCOUT SYSTEM 共通規範](https://github.com/playerkousas-rgb/readme)。
 
 這是專案適配檢查，不是官方地圖認證、真機驗收或行山安全保證。具體命令及每次執行結果以 `npm run final-check`／`node scripts/final_check_v1.0.mjs --json` 的輸出為準。瀏覽器測試均以合成底圖、模擬等高線／路由及本機記憶體活動服務執行；Worker 額外使用本機 workerd 及 D1／SQLite 測試。正式離線測試使用生成的 Service Worker 和合成 GeoTIFF。
 

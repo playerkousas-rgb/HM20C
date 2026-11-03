@@ -626,3 +626,13 @@ a { color: inherit; }
 .question-overview-card li button, .question-overview-return { justify-self: start; border: 1px solid #cadaCA; border-radius: 6px; background: #fff; color: #315f43; font-size: 11px; font-weight: 700; min-height: 36px; padding: 6px 8px; }
 .question-overview-return { margin-top: 7px; align-self: flex-start; flex-shrink: 0; }
 @media (max-width: 700px) { .question-overview-card { left: 12px; bottom: 110px; max-height: min(38%, 260px); } }
+
+/* Leader activity controls: keep the daily workflow and recovery distinct on phones. */
+.question-online .question-warning { color: #8b5c31; }
+.question-retry { padding: 10px; margin: 12px 0; background: #fff5e6; border-radius: 9px; }
+.question-retry p { margin: 0 0 8px; }
+.question-online .question-stop { display: flex; margin-top: 14px; }
+.question-confirm { padding: 10px; background: #fff5e6; border-radius: 9px; }
+.question-confirm span { flex-basis: 100%; line-height: 1.6; }
+.question-advanced { border-top: 1px solid #c6dace; margin: 14px 0; padding-top: 10px; }
+.question-advanced summary { cursor: pointer; font-size: 13px; font-weight: 700; color: #28583d; padding: 8px 0; }

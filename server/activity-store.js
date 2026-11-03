@@ -1,8 +1,13 @@
 const PREFIX = 'hm20c:activity:v1:';
 export const ACTIVITY_TTL_SECONDS = 7 * 24 * 60 * 60;
+function ttlSeconds(value, now = Date.now()) {
+  if (!Number.isSafeInteger(value?.expiresAt) || value.expiresAt <= now) return 0;
+  return Math.max(1, Math.ceil((value.expiresAt - now) / 1000));
+}
 const CAS = `local value = redis.call('GET', KEYS[1])
 if not value then return 0 end
 local current = cjson.decode(value)
+if tonumber(current.expiresAt or 0) <= tonumber(ARGV[4]) then redis.call('DEL', KEYS[1]); return 0 end
 if tonumber(current.version) ~= tonumber(ARGV[1]) then return -1 end
 redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3])
 return 1`;
@@ -36,8 +41,14 @@ export function redisFromEnv(env = process.env) {
   }
   return {
     async get(id) { const value = await command(['GET', PREFIX + id]); return value ? JSON.parse(value) : null; },
-    async create(id, value) { return (await command(['SET', PREFIX + id, JSON.stringify(value), 'EX', ACTIVITY_TTL_SECONDS, 'NX'])) === 'OK'; },
-    async compareSet(id, expected, value) { return Number(await command(['EVAL', CAS, 1, PREFIX + id, expected, JSON.stringify(value), ACTIVITY_TTL_SECONDS])); },
+    async create(id, value) {
+      const ttl = ttlSeconds(value);
+      return ttl > 0 && (await command(['SET', PREFIX + id, JSON.stringify(value), 'EX', ttl, 'NX'])) === 'OK';
+    },
+    async compareSet(id, expected, value) {
+      const now = Date.now(); const ttl = ttlSeconds(value, now);
+      return ttl ? Number(await command(['EVAL', CAS, 1, PREFIX + id, expected, JSON.stringify(value), ttl, now])) : 0;
+    },
     async compareDelete(id, expected) { return Number(await command(['EVAL', CAS_DELETE, 1, PREFIX + id, expected])); },
   };
 }
@@ -54,13 +65,15 @@ export function createMemoryActivityStore() {
     async create(id, value) {
       const previous = records.get(id);
       if (previous && previous.expires > Date.now()) return false;
-      records.set(id, { value: structuredClone(value), expires: Date.now() + ACTIVITY_TTL_SECONDS * 1000 }); return true;
+      if (!ttlSeconds(value)) return false;
+      records.set(id, { value: structuredClone(value), expires: value.expiresAt }); return true;
     },
     async compareSet(id, expected, value) {
       const previous = records.get(id);
       if (!previous || previous.expires <= Date.now()) { records.delete(id); return 0; }
       if (previous.value.version !== expected) return -1;
-      records.set(id, { value: structuredClone(value), expires: Date.now() + ACTIVITY_TTL_SECONDS * 1000 }); return 1;
+      if (!ttlSeconds(value)) return 0;
+      records.set(id, { value: structuredClone(value), expires: value.expiresAt }); return 1;
     },
     async compareDelete(id, expected) {
       const previous = records.get(id);

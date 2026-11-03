@@ -592,6 +592,8 @@ a { color: inherit; }
 .question-online { padding: 14px; border-radius: 11px; background: #eff6ef; margin-top: 14px; }
 .question-online p, .question-online small, .question-sync-status { color: #62796a; font-size: 12px; line-height: 1.55; }
 .question-online .secondary-button { width: auto; }
+.question-expiry { display: grid; gap: 6px; margin: 10px 0; color: #28453a; font-size: 13px; font-weight: 700; }
+.question-expiry input { width: 100%; min-width: 0; border: 1px solid #c8d8cc; border-radius: 9px; background: #fff; padding: 10px 11px; color: #183b2d; font: inherit; }
 .question-release { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12px; margin: 10px 0; }
 .question-release button:disabled, .question-actions button:disabled { opacity: .5; }
 .question-unsynced { color: #a25428 !important; }

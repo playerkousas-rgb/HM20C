@@ -18,10 +18,10 @@ async function openBank(page) {
   await page.getByRole('button', { name: '題目', exact: true }).click();
   await page.getByRole('button', { name: /領袖題庫及同步活動/ }).click();
 }
-async function makeSet(page) {
+async function makeSet(page, name = '西貢雙題') {
   await openBank(page);
   await page.getByRole('button', { name: '建立題組' }).click();
-  await page.getByLabel('題組名稱').fill('西貢雙題');
+  await page.getByLabel('題組名稱').fill(name);
   await page.getByLabel('第 1 題題型').selectOption('identify');
   await page.getByLabel('第 1 題題目').fill('這個座標的圖例是甚麼？');
   await page.getByLabel('第 1 題八位座標').fill('50Q KK 2430 7773');
@@ -31,7 +31,7 @@ async function makeSet(page) {
   await page.getByRole('button', { name: '使用這個座標' }).click();
   await expect(page.getByText('領袖答案：49Q HE 0199 6342')).toBeVisible();
   await page.getByRole('button', { name: '儲存題組' }).click();
-  await expect(page.getByRole('dialog')).toContainText('西貢雙題');
+  await expect(page.getByRole('dialog')).toContainText(name);
 }
 async function currentQr(page, label) {
   await expect(page.getByAltText(`${label} QR Code`)).toBeVisible();
@@ -77,7 +77,7 @@ test('leader saves two questions; separate offline QR packets do not contain or 
   await memberContext.close(); await leaderContext.close();
 });
 
-test('one activity QR syncs questions and selective answers; edits reset release and keep GPX', async ({ browser }) => {
+test('one activity QR updates only on demand; selective answers and GPX stay intact', async ({ browser }) => {
   test.setTimeout(90_000);
   const leaderContext = await browser.newContext({ viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true });
   const leader = await leaderContext.newPage(); await mockMaps(leader); await leader.goto('/'); await login(leader); await makeSet(leader);
@@ -92,6 +92,8 @@ test('one activity QR syncs questions and selective answers; edits reset release
 
   const memberContext = await browser.newContext({ viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true });
   const member = await memberContext.newPage(); await mockMaps(member); await member.goto('/');
+  const activityRequests = [];
+  member.on('request', (request) => { if (request.method() === 'GET' && new URL(request.url()).pathname === '/api/activity') activityRequests.push(request.url()); });
   const gpx = '<gpx xmlns="http://www.topografix.com/GPX/1/1"><wpt lat="22.3835" lon="114.3225"><name>保留航點</name></wpt></gpx>';
   await member.locator('input[type=file]').first().setInputFiles({ name: 'route.gpx', mimeType: 'application/gpx+xml', buffer: Buffer.from(gpx) });
   await expect.poll(() => member.evaluate(() => localStorage.getItem('scout-trail-map.route.v1'))).toContain('保留航點');
@@ -104,12 +106,20 @@ test('one activity QR syncs questions and selective answers; edits reset release
   const id = decodeShared(activityLink).id;
   const publicBefore = await member.evaluate(async (activityId) => (await fetch(`/api/activity?id=${activityId}`)).text(), id);
   expect(publicBefore).not.toContain('秘密圖例'); expect(publicBefore).not.toContain('ownerKey');
+  expect(activityRequests).toHaveLength(2); // first scan plus the explicit privacy check above
+  await member.waitForTimeout(6500); // the former six-second poll must not run
+  expect(activityRequests).toHaveLength(2);
 
   await memberContext.setOffline(true);
-  await expect(member.locator('.question-sync-status')).toContainText('離線', { timeout: 8000 });
+  await expect.poll(() => member.evaluate(() => navigator.onLine)).toBe(false);
+  await member.getByRole('button', { name: '更新題目及答案' }).click();
+  await expect(member.locator('.question-sync-status')).toContainText('離線');
   await leader.getByRole('button', { name: '公布第 1 題' }).click();
   await expect(member.getByRole('dialog')).not.toContainText('秘密圖例：涼亭');
   await memberContext.setOffline(false);
+  await expect.poll(() => member.evaluate(() => navigator.onLine)).toBe(true);
+  await expect(member.getByRole('dialog')).not.toContainText('秘密圖例：涼亭');
+  await member.getByRole('button', { name: '更新題目及答案' }).click();
   await expect(member.getByText('秘密圖例：涼亭')).toBeVisible({ timeout: 12_000 });
   await expect(member.getByText('答案尚未公布')).toHaveCount(1);
   await leader.getByRole('button', { name: '修改題目' }).click();
@@ -117,14 +127,95 @@ test('one activity QR syncs questions and selective answers; edits reset release
   await leader.getByLabel('第 1 題答案').fill('新秘密答案');
   await leader.getByRole('button', { name: '儲存題組' }).click();
   await expect(leader.getByRole('dialog')).toContainText('線上題組版本 2');
+  await expect(member.getByText('新版本：這是甚麼圖例？')).toHaveCount(0);
+  await member.getByRole('button', { name: '更新題目及答案' }).click();
   await expect(member.getByText('新版本：這是甚麼圖例？')).toBeVisible({ timeout: 12_000 });
   await expect(member.getByRole('dialog')).not.toContainText('秘密圖例：涼亭');
   await expect(member.getByRole('dialog')).not.toContainText('新秘密答案');
   await expect(member.getByText('答案尚未公布')).toHaveCount(2);
   await leader.getByRole('button', { name: '公布全部答案' }).click();
+  await expect(member.getByText('新秘密答案')).toHaveCount(0);
+  await member.getByRole('button', { name: '更新題目及答案' }).click();
   await expect(member.getByText('新秘密答案')).toBeVisible({ timeout: 12_000 });
   expect(await member.evaluate(() => localStorage.getItem('scout-trail-map.route.v1'))).toBe(before);
   await memberContext.close(); await leaderContext.close();
+});
+
+test('A and B leaders independently create stable practice QR codes and members update only their own group', async ({ browser }) => {
+  test.setTimeout(120_000);
+  const contexts = [];
+  async function phone() {
+    const context = await browser.newContext({ viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true });
+    contexts.push(context);
+    const page = await context.newPage(); await mockMaps(page); return page;
+  }
+  async function createGroup(name) {
+    const page = await phone(); await page.goto('/'); await login(page); await makeSet(page, name);
+    await expect(page.getByLabel('練習到期時間')).toBeVisible();
+    await page.getByRole('button', { name: '建立連網活動' }).click();
+    await expect(page.getByRole('button', { name: '活動 QR' })).toBeVisible();
+    await page.getByRole('button', { name: '活動 QR' }).click();
+    const link = await page.getByLabel('連網活動分享連結').inputValue();
+    await page.getByRole('button', { name: '返回題組' }).click();
+    return { page, link, id: decodeShared(link).id };
+  }
+  const a = await createGroup('A 團題組');
+  const b = await createGroup('B 團題組');
+  expect(a.id).not.toBe(b.id); expect(a.link).not.toBe(b.link);
+  const memberA = await phone(); await memberA.goto(a.link);
+  const memberB = await phone(); await memberB.goto(b.link);
+  await expect(memberA.getByRole('dialog')).toContainText('A 團題組');
+  await expect(memberB.getByRole('dialog')).toContainText('B 團題組');
+
+  await a.page.getByRole('button', { name: '延長練習期限' }).click();
+  await expect(a.page.getByRole('dialog')).toContainText('活動版本 2');
+  await a.page.getByRole('button', { name: '活動 QR' }).click();
+  expect(await a.page.getByLabel('連網活動分享連結').inputValue()).toBe(a.link);
+  await a.page.getByRole('button', { name: '返回題組' }).click();
+  await a.page.getByRole('button', { name: '修改題目' }).click();
+  await a.page.getByLabel('第 1 題題目').fill('A 團的新題目');
+  await a.page.getByRole('button', { name: '儲存題組' }).click();
+  await expect(a.page.getByRole('dialog')).toContainText('線上題組版本 2');
+  await memberA.getByRole('button', { name: '更新題目及答案' }).click();
+  await memberB.getByRole('button', { name: '更新題目及答案' }).click();
+  await expect(memberA.getByRole('dialog')).toContainText('A 團的新題目');
+  await expect(memberB.getByRole('dialog')).not.toContainText('A 團的新題目');
+  await expect(memberB.getByRole('dialog')).toContainText('B 團題組');
+  await Promise.all(contexts.map((context) => context.close()));
+});
+
+test('one leader can copy a set and create a second independent activity on the same phone', async ({ page }) => {
+  await mockMaps(page); await page.goto('/'); await login(page); await makeSet(page);
+  await page.getByRole('button', { name: '建立連網活動' }).click();
+  await page.getByRole('button', { name: '活動 QR' }).click();
+  const first = await page.getByLabel('連網活動分享連結').inputValue();
+  await page.getByRole('button', { name: '返回題組' }).click();
+  await page.getByRole('button', { name: '複製題組' }).click();
+  await expect(page.getByRole('dialog')).toContainText('西貢雙題（副本）');
+  await expect(page.getByRole('button', { name: '建立連網活動' })).toBeVisible();
+  await page.getByRole('button', { name: '建立連網活動' }).click();
+  await page.getByRole('button', { name: '活動 QR' }).click();
+  const second = await page.getByLabel('連網活動分享連結').inputValue();
+  expect(decodeShared(second).id).not.toBe(decodeShared(first).id);
+});
+
+test('switching to another offline set asks before replacing the member copy', async ({ browser }) => {
+  const leader = await browser.newPage(); await mockMaps(leader); await leader.goto('/'); await login(leader); await makeSet(leader);
+  await leader.getByRole('button', { name: '題目 QR／JSON' }).click(); await currentQr(leader, '離線題目');
+  const first = await leader.getByLabel('離線題目分享連結').inputValue();
+  await leader.getByRole('button', { name: '返回題組' }).click();
+  await leader.getByRole('button', { name: '複製題組' }).click();
+  await leader.getByRole('button', { name: '題目 QR／JSON' }).click(); await currentQr(leader, '離線題目');
+  const second = await leader.getByLabel('離線題目分享連結').inputValue();
+  const member = await browser.newPage(); await mockMaps(member); await member.goto(first);
+  await expect(member.getByRole('dialog')).toContainText('西貢雙題');
+  member.once('dialog', async (dialog) => { expect(dialog.message()).toContain('會取代'); await dialog.dismiss(); });
+  await member.goto(second);
+  await expect(member.getByRole('dialog')).not.toContainText('（副本）');
+  member.once('dialog', async (dialog) => { expect(dialog.message()).toContain('會取代'); await dialog.accept(); });
+  await member.goto(second);
+  await expect(member.getByRole('dialog')).toContainText('西貢雙題（副本）');
+  await member.close(); await leader.close();
 });
 
 test('marking a question on a rotated mobile map returns the chosen coordinate to the editor', async ({ page }) => {

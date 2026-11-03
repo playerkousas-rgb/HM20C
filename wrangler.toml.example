@@ -1,0 +1,20 @@
+# Copy to wrangler.toml (ignored by Git) and fill in your own D1 database ID.
+# Select Workers Free in the Cloudflare dashboard; do not enable a paid plan.
+name = "hm20c-practice"
+main = "cloudflare/worker.js"
+compatibility_date = "2026-11-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+[vars]
+# Comma-separated exact HTTPS origins, without a trailing slash or path.
+# Add your production App origin and, when needed, specific preview origins.
+ALLOWED_ORIGINS = "https://your-production-app.example"
+
+[triggers]
+crons = ["17 * * * *"]
+
+[[d1_databases]]
+binding = "ACTIVITY_DB"
+database_name = "hm20c-practices"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"

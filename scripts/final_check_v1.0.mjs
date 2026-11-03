@@ -41,7 +41,7 @@ run('正式及開發依賴安全稽核（需網絡）', ['audit', '--audit-level
 
 const version = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')).version;
 const manual = [
-  'GitHub/Vercel：檢查實際部署、環境變數、正式 Upstash Redis 與兩部裝置同步；腳本未連接正式資料庫。',
+  'GitHub/Vercel/Cloudflare：檢查實際部署、免費方案及配額、環境變數、正式 D1 與兩部裝置手動更新；腳本未連接正式資料庫。',
   '開發者：用實體 iOS／Android 測鏡頭、加入主畫面、飛航模式、離線中文字及儲存空間不足。',
   '系統架構師：確認政府及第三方圖源 CORS、下載授權、服務可靠度與既有活動鑰匙的保管風險。',
   'AI agent：按需求比對 16 張紙圖角度、圖例、座標換算和未完成項；自動檢查不能代替專家核實。',

@@ -23,3 +23,8 @@ test-results/
 .env
 .env.*
 !.env.example
+
+# Cloudflare configuration is copied locally from the example. It contains
+# account-specific identifiers; keep secrets in wrangler secret storage.
+/wrangler.toml
+/.wrangler/

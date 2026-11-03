@@ -1,7 +1,7 @@
 {
   "name": "scout-trail-map",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
@@ -35,8 +35,11 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",
+    "esbuild": "^0.25.12",
     "jsdom": "^26.0.0",
+    "miniflare": "^5.20261102.0-beta",
     "vite": "^6.1.0",
-    "vitest": "^4.1.12"
+    "vitest": "^4.1.12",
+    "wrangler": "^4.156.2"
   }
 }

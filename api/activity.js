@@ -76,8 +76,12 @@ export default async function handler(req, res, options = {}) {
       return reply(res, 200, publicView(id, record));
     } catch { return reply(res, 503, { error: 'storage_unavailable' }); }
   }
-  if (!secret) return reply(res, 503, { error: 'leader_not_configured' });
-  if (!authorized(req, leaderSigningSecret(secret, options.env || process.env))) return reply(res, 401, { error: 'unauthorized' });
+  // Only the Cloudflare adapter may set this internal flag, after checking
+  // the leader session against the current Production Vercel deployment.
+  if (options.trustedServerMutation !== true) {
+    if (!secret) return reply(res, 503, { error: 'leader_not_configured' });
+    if (!authorized(req, leaderSigningSecret(secret, options.env || process.env))) return reply(res, 401, { error: 'unauthorized' });
+  }
   if (!String(req.headers['content-type'] || '').toLowerCase().startsWith('application/json')) return reply(res, 415, { error: 'content_type' });
   let data;
   try { data = await readBody(req); } catch { return reply(res, 400, { error: 'invalid_body' }); }

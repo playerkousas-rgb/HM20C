@@ -464,3 +464,17 @@ test('oversized self-contained QR fails clearly while JSON remains available', a
   const packet = JSON.parse(Buffer.concat(parts).toString());
   expect(packet.set.questions).toHaveLength(15); expect(packet.answers).toHaveLength(15);
 });
+
+test('a revoked leader session locks only after a rejected online write and preserves the local question bank', async ({ page }) => {
+  await mockMaps(page); await page.goto('/'); await login(page); await makeSet(page);
+  await page.route('**/api/activity', (route) => route.request().method() === 'POST'
+    ? route.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"unauthorized"}' })
+    : route.continue());
+  await page.getByRole('button', { name: '建立連網活動' }).click();
+  await expect(page.locator('.leader-coordinate')).not.toBeVisible();
+  await expect(page.getByRole('dialog')).toContainText('領袖模式已結束');
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('scout-trail-map.question-bank.v1'))).toContain('秘密圖例：涼亭');
+  await page.getByRole('button', { name: '關閉' }).click();
+  await login(page); await openBank(page);
+  await expect(page.getByRole('dialog')).toContainText('西貢雙題');
+});

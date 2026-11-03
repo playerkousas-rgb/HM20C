@@ -15,7 +15,7 @@
 
 ## 本次自動檢查紀錄
 
-2026-11-03（香港）在 Node 22／模擬 Chromium 執行 `npm run final-check`：建置成功、守門 17 項、單元及 API 82 項、一般瀏覽器 42 項、正式 Service Worker 離線瀏覽器 21 項通過。含 Cloudflare 真 workerd + 本機 D1 的 API 測試與 SQLite CAS 測試；地圖、路由、瀏覽器活動儲存及 GeoTIFF 為合成或模擬資料。`dist` 約 2.92 MiB；完整 `npm audit` 為 0 個已知漏洞。依賴稽核結果以執行當刻為準。
+2026-11-03（香港）在 Node 22／模擬 Chromium 執行 `npm run final-check`：建置成功、守門 17 項、單元及 API 85 項、一般瀏覽器 43 項、正式 Service Worker 離線瀏覽器 21 項通過。含 Cloudflare 真 workerd + 本機 D1、模擬固定 Production 驗證網址、密碼輪換、舊部署憑證拒絕及 SQLite CAS；地圖、路由、瀏覽器活動儲存及 GeoTIFF 為合成或模擬資料。`dist` 約 2.92 MiB；完整 `npm audit` 為 0 個已知漏洞。依賴稽核結果以執行當刻為準。
 
 首次完整瀏覽器測試為 36/38：快速移圖後，書籤對話框顯示座標與儲存值可能不同；觸控繪路後緊接的點選有時被原生手勢吞掉。已分別改用同一圖心快照、在繪路期間取消原生 touchmove，並補充回歸：模擬對話框開啟後地圖仍移動、320 px 觸控切換及 A/B 逐點檢查，兩項各連續重複 8 次通過。這仍不是實機驗收。
 
@@ -24,7 +24,7 @@ PR #5 的 GitHub 檢查曾通過，但合併後 main 的一次檢查在題目方
 ## 特別重要的未完成事項
 
 1. **真實底圖及整幅離線**：地政總署 API、Esri 等高線、BRouter 及 OpenTopoMap 的實際可用性、跨域和離線授權未由合成測試保證；實際政府 TIFF 未完成導入／解碼與紙圖對照。五張郊遊圖的合法整幅離線來源未確認。此版本只支援預載目前畫面及實驗性 iB20000 試用，**不等同已完成 16 張紙圖與 5 張郊遊紙圖整幅離線**。
-2. **資料庫及帳戶**：本機 workerd／D1 通過不代表正式 Cloudflare 已連接。管理員仍須依 [Cloudflare Free 設定指南](cloudflare-practice.md) 設定 Worker／D1、Vercel 和 Worker 相同的共用領袖密碼及高熵 `LEADER_SESSION_SECRET`，以及公開 URL 和 CORS；不要把秘密貼進 Git 或聊天。舊 Redis 活動不自動遷移。活動管理鑰匙在手機及私人備份明文存在，與 A1 有已知差距。
+2. **資料庫及帳戶**：本機 workerd／D1 通過不代表正式服務已驗收。管理員仍須依 [Cloudflare Free 設定指南](cloudflare-practice.md) 升級同一 Worker、設定 Vercel 的共用領袖密碼，以及兩端相同的高熵 `LEADER_SESSION_SECRET`、固定正式驗證網址、公開 Worker URL 和 CORS；日後改密碼只改 Vercel。勿重建現有 D1 或把秘密貼進 Git／聊天。舊 Redis 活動不自動遷移。活動管理鑰匙在手機及私人備份明文存在，與 A1 有已知差距。
 3. **版本與大小**：版本化 HTML 源與固定 Vite 入口由腳本同步，bundle 使用內容 hash；S7 `dist < 5 MiB` 是本專案的 CI 硬門檻，尚未達 G11 文檔列出的整站 `≤ 1 MB` 理想目標。生成 QR PNG 未嵌 W2/W3 隱形水印，也未建立圖片追溯紀錄。
 4. **人工核實**：地名／圖例須領袖對照紙圖填寫；三個地標不能代替三角網測觀測；八位格是約 10 米方格中心，不是 GPS；紙圖角度、磁差和路網皆須實地核對。帶紙圖及指南針，不能單靠手機導航。
 

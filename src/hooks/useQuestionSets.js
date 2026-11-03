@@ -22,7 +22,7 @@ export function mergeSnapshot(previous, value) {
   for (const answer of value.answers) merged.set(answer.id, answer);
   return { set: value.set, answers: [...merged.values()], activityId: value.id, version: value.version, syncedAt: Date.now() };
 }
-export function useQuestionSets({ leaderActive, token, open, notify }) {
+export function useQuestionSets({ leaderActive, token, open, notify, onUnauthorized }) {
   const [bank, setBank] = useState(loadBank);
   const [activities, setActivities] = useState(loadActivities);
   const [selectedId, setSelectedId] = useState(null);
@@ -39,6 +39,10 @@ export function useQuestionSets({ leaderActive, token, open, notify }) {
   const joinSequence = useRef(0);
   const selected = bank.find((set) => set.id === selectedId) || null;
   const activity = selected ? activities[selected.id] : null;
+  function writeError(cause) {
+    setError(cause.message);
+    if (cause.code === 'unauthorized' && token) onUnauthorized?.(token);
+  }
 
   // No timer, background fetch or reconnect listener: joining and this explicit
   // button are the only member-initiated network requests for an activity.
@@ -112,7 +116,11 @@ export function useQuestionSets({ leaderActive, token, open, notify }) {
         const result = await updateActivity(record, 'sync', { set: nextSet }, token);
         const next = { ...activities, [nextSet.id]: metadata(record, result) };
         if (saveActivities(next)) notify('題組已儲存並同步；答案需重新公布。');
-      } catch (cause) { setError(`本機已儲存，但未同步：${cause.message}`); notify('題組只儲存在本機；請稍後更新活動。'); }
+      } catch (cause) {
+        setError(`本機已儲存，但未同步：${cause.message}`);
+        if (cause.code === 'unauthorized' && token) onUnauthorized?.(token);
+        else notify('題組只儲存在本機；請稍後更新活動。');
+      }
       finally { setBusy(false); }
     } else notify(record ? '題組已存在本機；連網後請更新活動。' : '題組已儲存在本機。');
   }
@@ -152,7 +160,7 @@ export function useQuestionSets({ leaderActive, token, open, notify }) {
       const result = await createActivity(selected, token, expiresAt);
       if (!keyPattern.test(result.ownerKey || '') || !keyPattern.test(result.setFingerprint || '')) throw new Error('活動回應未包含有效管理資料。');
       if (saveActivities({ ...activities, [selected.id]: metadata(null, result, result.ownerKey) })) notify('已建立活動；可分享活動 QR。');
-    } catch (cause) { setError(cause.message); }
+    } catch (cause) { writeError(cause); }
     finally { setBusy(false); }
   }
   async function update(action, data = {}) {
@@ -161,7 +169,7 @@ export function useQuestionSets({ leaderActive, token, open, notify }) {
     try {
       const result = await updateActivity(activity, action, data, token);
       if (saveActivities({ ...activities, [selected.id]: metadata(activity, result) })) notify(action === 'release' ? '答案已公布；請成員連網後按「更新題目及答案」。' : action === 'extend' ? '期限已延長；活動 QR 不變。' : '活動題目已更新；請成員手動更新。');
-    } catch (cause) { setError(cause.message); }
+    } catch (cause) { writeError(cause); }
     finally { setBusy(false); }
   }
   async function refresh() {
@@ -181,7 +189,7 @@ export function useQuestionSets({ leaderActive, token, open, notify }) {
       await stopActivity(activity, token);
       const next = { ...activities }; delete next[selected.id];
       if (saveActivities(next)) notify('活動已結束；曾公布的答案仍可能留在成員手機。');
-    } catch (cause) { setError(cause.message); }
+    } catch (cause) { writeError(cause); }
     finally { setBusy(false); }
   }
   function unlinkOnline() {

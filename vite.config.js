@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { defineConfig, loadEnv } from 'vite';
 import leaderHandler from './api/leader.js';
 import activityHandler from './api/activity.js';
+import leaderVerifyHandler from './api/leader-verify.js';
 import { createMemoryActivityStore } from './server/activity-store.js';
 
 const appVersion = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version;
@@ -45,7 +46,7 @@ function offlineWorker() {
 function localLeaderApi() {
   const memoryStore = createMemoryActivityStore();
   const middleware = (server) => {
-    const prefixes = ['LEADER_', 'UPSTASH_', 'KV_', 'ACTIVITY_'];
+    const prefixes = ['LEADER_', 'UPSTASH_', 'KV_', 'ACTIVITY_', 'VITE_ACTIVITY_'];
     // Only server middleware reads these values; none are passed to the client.
     const localEnv = { ...Object.assign({}, ...prefixes.map((prefix) => loadEnv(server.config.mode, server.config.root, prefix))), ...process.env };
     const options = { password: localEnv.LEADER_PASSWORD, env: localEnv, store: localEnv.ACTIVITY_DEV_MEMORY === '1' ? memoryStore : null };
@@ -55,6 +56,7 @@ function localLeaderApi() {
         res.end();
       });
     }
+    server.middlewares.use('/api/leader-verify', (req, res) => safely(leaderVerifyHandler, req, res));
     server.middlewares.use('/api/leader', (req, res) => safely(leaderHandler, req, res));
     server.middlewares.use('/api/activity', (req, res) => safely(activityHandler, req, res));
   };

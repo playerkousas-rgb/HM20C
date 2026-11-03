@@ -1,0 +1,25 @@
+# Copy to wrangler.toml (ignored by Git) and fill in your own D1 database ID.
+# Select Workers Free in the Cloudflare dashboard; do not enable a paid plan.
+# Before the first deploy, check Workers & Pages and choose an unused Worker
+# name below. Deploying to an existing name can overwrite that Worker.
+name = "hm20c-practice"
+main = "cloudflare/worker.js"
+compatibility_date = "2026-11-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+[vars]
+# Comma-separated exact HTTPS origins, without a trailing slash or path.
+# Add your production App origin and, when needed, specific preview origins.
+ALLOWED_ORIGINS = "https://your-production-app.example"
+# Fixed public Production domain (NOT a versioned deployment/preview URL).
+# Every leader write is verified against this current Vercel deployment.
+LEADER_VERIFY_URL = "https://your-production-app.example/api/leader-verify"
+
+[triggers]
+crons = ["17 * * * *"]
+
+[[d1_databases]]
+binding = "ACTIVITY_DB"
+database_name = "hm20c-practices"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"

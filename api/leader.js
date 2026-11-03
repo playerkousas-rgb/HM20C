@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { issueLeaderSession, leaderSigningSecret } from '../server/leader-session.js';
+import { validWorkerSecret } from '../server/leader-auth.js';
 
 // This function verifies the password but does not claim to protect map data:
 // the map and the calculations are shipped to every browser for offline use.
@@ -59,8 +60,14 @@ function sameSecret(a, b) {
 }
 export default async function leaderHandler(req, res, options = {}) {
   if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); reply(res, 405, { error: 'method' }); return; }
-  const password = options.password ?? process.env.LEADER_PASSWORD;
+  const env = options.env || process.env;
+  const password = options.password ?? env.LEADER_PASSWORD;
   if (!password) { reply(res, 503, { error: 'not_configured' }); return; }
+  // When Cloudflare activities are enabled, never issue password-only session
+  // signatures that could be used as an offline password-guessing oracle.
+  if (env.VITE_ACTIVITY_API_URL && (!validWorkerSecret(env.LEADER_SESSION_SECRET) || env.LEADER_SESSION_SECRET === password)) {
+    reply(res, 503, { error: 'signing_not_configured' }); return;
+  }
   if (!String(req.headers['content-type'] || '').toLowerCase().startsWith('application/json')) {
     reply(res, 415, { error: 'content_type' }); return;
   }
@@ -77,5 +84,5 @@ export default async function leaderHandler(req, res, options = {}) {
   attempts.delete(key);
   // The short-lived, signed token authorizes activity writes; the browser
   // keeps it only in memory and never receives the password back.
-  reply(res, 200, { ok: true, durationSeconds: SESSION_SECONDS, token: issueLeaderSession(leaderSigningSecret(password, options.env || process.env)) });
+  reply(res, 200, { ok: true, durationSeconds: SESSION_SECONDS, token: issueLeaderSession(leaderSigningSecret(password, env)) });
 }

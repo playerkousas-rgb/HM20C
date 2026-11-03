@@ -8,6 +8,16 @@ import { gridReference, parseGridReference } from '../lib/utm';
 
 const types = { grid: '看地點量八位座標', identify: '座標找地點／圖例', bearing: '兩點方位', resection: '三角網測', free: '文字題' };
 const pointCount = { grid: 1, identify: 0, bearing: 2, resection: 3, free: 0 };
+const DAY_MS = 24 * 60 * 60 * 1000;
+function localDateTime(ms) {
+  const date = new Date(ms);
+  const pad = (value) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+function nextExpiry(activity) {
+  const now = Date.now();
+  return localDateTime(Math.min(Math.max(now, activity?.expiresAt || now) + 7 * DAY_MS, now + 365 * DAY_MS - 60_000));
+}
 
 export function QuestionSetEditor({ draft, busy, onChange, onMark, onOverview, onSave, onCancel }) {
   const [error, setError] = useState('');
@@ -37,6 +47,7 @@ export function QuestionSetEditor({ draft, busy, onChange, onMark, onOverview, o
   }
   return <div className="question-editor">
     <p className="modal-intro">題組儲存在這部手機。每題可用不同題型；答案不會放進題目 QR。</p>
+    <p className="modal-footnote">出發前請下載各組的固定題目 QR 圖片作離線後備，並預載 App 和所需地圖、以飛航模式測試。答案 QR 請由領袖另行保管。</p>
     <label>題組名稱<input aria-label="題組名稱" value={draft.name} maxLength={48} placeholder="例如：西貢讀圖練習" onChange={(e) => onChange({ ...draft, name: e.target.value })}/></label>
     {draft.questions.map((q, index) => <section className="question-editor-card" key={q.id}>
       <div className="question-card-heading"><strong>第 {index + 1} 題</strong>{draft.questions.length > 1 && <button onClick={() => onChange({ ...draft, questions: draft.questions.filter((_, i) => i !== index) })}>刪除此題</button>}</div>
@@ -62,32 +73,43 @@ export function QuestionSetEditor({ draft, busy, onChange, onMark, onOverview, o
   </div>;
 }
 
-export function QuestionBank({ sets, selected, activity, busy, error, hasDraft, onResumeDraft, onSelect, onCreate, onEdit, onDelete, onBack, onOverview, onShare, onCreateActivity, onSync, onRefresh, onRelease, onStopActivity, onUnlinkActivity, onBackup, onImport }) {
+export function QuestionBank({ sets, selected, activity, busy, error, hasDraft, onResumeDraft, onSelect, onCreate, onEdit, onDuplicate, onDelete, onBack, onOverview, onShare, onCreateActivity, onExtendActivity, onSync, onRefresh, onRelease, onStopActivity, onUnlinkActivity, onBackup, onImport }) {
   const input = useRef(null);
   const [confirm, setConfirm] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
   const [confirmUnlink, setConfirmUnlink] = useState(false);
+  const [expiry, setExpiry] = useState(() => nextExpiry(null));
   useEffect(() => { setConfirm(false); setConfirmStop(false); setConfirmUnlink(false); }, [selected?.id]);
+  useEffect(() => { setExpiry(nextExpiry(activity)); }, [selected?.id, activity?.id, activity?.expiresAt]);
   return <div className="question-bank">
     {hasDraft && <button className="secondary-button question-add" onClick={onResumeDraft}>繼續未儲存草稿</button>}
     {selected ? <>
       <p className="modal-intro"><strong>{selected.name}</strong> · {selected.questions.length} 題 · 題組版本 {selected.revision}</p>
       <ol className="question-summary">{selected.questions.map((q, i) => <li key={q.id}><strong>{i + 1}. {q.prompt}</strong><small>{types[q.type]}{q.reference ? ` · ${q.reference}` : ''}</small><span>領袖答案：{q.answer}</span></li>)}</ol>
-      <div className="question-actions"><button onClick={onEdit} disabled={busy}>修改題目</button><button onClick={onOverview}><MapPin size={15}/>在地圖總覽所有答案</button><button onClick={() => onShare('questions')}><QrCode size={15}/>題目 QR／JSON</button><button onClick={() => onShare('answers')}><QrCode size={15}/>答案 QR／JSON</button></div>
-      <div className="question-online"><strong>連網同步活動</strong>
-        {!activity ? <><p>先建立活動，再讓成員掃活動 QR；之後可更新題目及公布答案。</p><button className="secondary-button" disabled={busy} onClick={onCreateActivity}>建立連網活動</button></> : <>
-          <p>活動版本 {activity.version} · 線上題組版本 {activity.revision}{activity.expiresAt ? ` · 預計 ${new Date(activity.expiresAt).toLocaleDateString('zh-HK')} 到期` : ''}</p>
+      <div className="question-actions"><button onClick={onEdit} disabled={busy}>修改題目</button><button onClick={onDuplicate} disabled={busy}>複製題組</button><button onClick={onOverview}><MapPin size={15}/>在地圖總覽所有答案</button><button onClick={() => onShare('questions')}><QrCode size={15}/>題目 QR／JSON</button><button onClick={() => onShare('answers')}><QrCode size={15}/>答案 QR／JSON</button></div>
+      <p className="modal-footnote"><strong>考核：固定題目</strong>。下載題目 QR 後可離線展示；修改題目要分享新 QR。</p>
+      <div className="question-online"><strong>練習：可變題目（連網活動）</strong>
+        <p>每次建立活動都有不同 QR。各團領袖使用共用密碼，自行建立及管理自己的活動。同一手機要為同一套題目建立另一個活動，可先複製題組。</p>
+        {!activity ? <>
+          <label className="question-expiry">練習到期時間<input aria-label="練習到期時間" type="datetime-local" value={expiry} onChange={(e) => setExpiry(e.target.value)}/></label>
+          <small>最少 1 分鐘、最多 365 日；到期前可延長，同一活動 QR 不變。</small>
+          <button className="secondary-button" disabled={busy || !Number.isFinite(Date.parse(expiry))} onClick={() => onCreateActivity(Date.parse(expiry))}>建立連網活動</button>
+        </> : <>
+          <p>活動版本 {activity.version} · 線上題組版本 {activity.revision}{activity.expiresAt ? ` · ${new Date(activity.expiresAt).toLocaleString('zh-HK')} 到期` : ''}</p>
+          <label className="question-expiry">延長至<input aria-label="延長練習到期時間" type="datetime-local" value={expiry} onChange={(e) => setExpiry(e.target.value)}/></label>
+          <button className="secondary-button" disabled={busy || !Number.isFinite(Date.parse(expiry))} onClick={() => onExtendActivity(Date.parse(expiry))}>延長練習期限</button>
+          <small>須在到期前延長。到期後請先解除本機活動連結再建立新活動；結束後亦可重新建立，均須換 QR。</small>
           {activity.revision !== selected.revision && <p className="question-unsynced">本機題組有未同步修改；更新後需重新公布答案。</p>}
           <div className="question-actions"><button onClick={() => onShare('activity')}><QrCode size={15}/>活動 QR</button><button onClick={onSync} disabled={busy}><RefreshCw size={15}/>更新活動題目</button><button onClick={onRefresh} disabled={busy}>重新整理狀態</button></div>
           {!confirmStop ? <button className="text-button" onClick={() => setConfirmStop(true)} disabled={busy}>結束連網活動</button> : <div className="question-release"><span>結束後舊活動 QR 失效；已公布的答案仍可能留在手機。</span><button disabled={busy} onClick={() => { setConfirmStop(false); onStopActivity(); }}>確認結束活動</button><button onClick={() => setConfirmStop(false)}>取消結束</button></div>}
           {!confirmUnlink ? <button className="text-button" onClick={() => setConfirmUnlink(true)} disabled={busy}>解除本機活動連結</button> : <div className="question-release"><span>會移除本機管理鑰匙；舊活動仍可用至到期，先備份或先結束活動。</span><button disabled={busy} onClick={() => { setConfirmUnlink(false); onUnlinkActivity(); }}>確認解除連結</button><button onClick={() => setConfirmUnlink(false)}>取消解除</button></div>}
           <div className="question-release"><span>線上公布答案：</span><button disabled={busy || activity.revision !== selected.revision} onClick={() => onRelease(selected.questions.map((q) => q.id))}>公布全部答案</button>{selected.questions.map((q, i) => <button key={q.id} disabled={busy || activity.revision !== selected.revision || activity.released?.includes(q.id)} onClick={() => onRelease([q.id])}>{activity.released?.includes(q.id) ? `第 ${i + 1} 題已公布` : `公布第 ${i + 1} 題`}</button>)}</div>
         </>}
-        <small>成員前台約每 6 秒檢查更新；無網時請改掃離線題目／答案 QR。公布後持有人可以保留答案。</small>
+        <small>成員掃活動 QR 後，須連網按「更新題目及答案」；不會自動查詢。無網時請改掃離線題目／答案 QR。公布後持有人可以保留答案。</small>
       </div>
       {error && <p className="leader-error" role="alert">{error}</p>}
       <div className="modal-actions"><button className="secondary-button" onClick={onBack}>返回題庫</button>{!confirm ? <button className="danger-button" disabled={busy} onClick={() => setConfirm(true)}>刪除本機題組</button> : <button className="danger-button" disabled={busy} onClick={() => { setConfirm(false); onDelete(); }}>確認刪除</button>}</div>
-      {confirm && <p className="question-unsynced">刪除本機題組和管理鑰匙；線上活動仍會在到期後自動刪除，請先備份。</p>}
+      {confirm && <p className="question-unsynced">刪除本機題組和管理鑰匙；線上活動會在到期後失效，背景清理可能延遲，請先備份。</p>}
     </> : <>
       <p className="modal-intro">每部領袖手機有自己的題庫。可一次分享多題，答案分開公布。</p>
       <div className="question-actions"><button className="primary-button" onClick={onCreate} disabled={busy}><Plus size={16}/>建立題組</button><button onClick={onBackup}><Download size={15}/>私人備份</button><button disabled={busy} onClick={() => input.current?.click()}><Upload size={15}/>還原備份</button></div>
@@ -127,7 +149,7 @@ export function QuestionShare({ mode, set, activity, onBack }) {
   async function copy() { try { await navigator.clipboard.writeText(qr.link); setMessage('連結已複製。'); } catch { setMessage('請長按下方連結複製。'); } }
   async function share() { try { if (navigator.share) await navigator.share({ title, url: qr.link }); else await copy(); } catch (error) { if (error?.name !== 'AbortError') setMessage('請改用複製或下載 QR。'); } }
   return <div className="question-share">
-    <p className="modal-intro">{mode === 'questions' ? '一個 QR 可放多題，不包含答案；修改後需重新掃。' : mode === 'answers' ? '這個 QR 包含題目和所選答案；成員可直接掃描，無須先掃題目。只有準備公布時才分享。' : '成員掃一次活動 QR；有網絡時自動檢查更新。'}</p>
+    <p className="modal-intro">{mode === 'questions' ? '一個 QR 可放多題，不包含答案；修改後需重新掃。' : mode === 'answers' ? '這個 QR 包含題目和所選答案；成員可直接掃描，無須先掃題目。只有準備公布時才分享。' : '成員掃一次活動 QR；之後連網按「更新題目及答案」讀取最新內容。'}</p>
     {mode === 'answers' && <label>分享範圍<select aria-label="答案分享範圍" value={selected} onChange={(e) => { setQr(null); setSelected(e.target.value); }}><option value="all">全部答案</option>{set.questions.map((q, i) => <option key={q.id} value={q.id}>第 {i + 1} 題</option>)}</select></label>}
     {message && <p className="exercise-message" role="status">{message}</p>}
     {qr && <div className="exercise-qr"><strong>{title} QR Code</strong><img src={qr.image} width="320" height="320" alt={`${title} QR Code`}/><div className="exercise-share-actions"><button onClick={share}><Share2 size={15}/>分享連結</button><button onClick={copy}><Copy size={15}/>複製</button><a href={qr.image} download={`${title}.png`}>下載 QR</a></div><details><summary>顯示分享連結</summary><textarea aria-label={`${title}分享連結`} readOnly rows={3} value={qr.link}/></details></div>}
@@ -137,12 +159,13 @@ export function QuestionShare({ mode, set, activity, onBack }) {
   </div>;
 }
 
-export function QuestionMember({ member, status, onView, onOverview, onScan, onBack }) {
+export function QuestionMember({ member, status, busy, onRefresh, onView, onOverview, onScan, onBack }) {
   const { set, answers } = member;
   const byId = new Map(answers.map((a) => [a.id, a.answer]));
   return <div className="question-member">
     <p className="modal-intro"><strong>{set.name}</strong> · {set.questions.length} 題 · 版本 {set.revision}</p>
-    <p className={`question-sync-status ${status?.error ? 'question-unsynced' : ''}`}>{member.activityId ? (status?.message || '準備同步活動…') : '離線題組：修改或公布答案時，請再掃新的 QR／JSON。'}</p>
+    <p className={`question-sync-status ${status?.error ? 'question-unsynced' : ''}`}>{member.activityId ? (status?.message || (member.syncedAt ? `上次更新 ${new Date(member.syncedAt).toLocaleString('zh-HK')}；請手動更新。` : '請連網手動更新活動。')) : '離線題組：修改或公布答案時，請再掃新的 QR／JSON。'}</p>
+    {member.activityId && <button className="secondary-button question-overview-open" onClick={onRefresh} disabled={busy}><RefreshCw size={16}/>{busy ? '更新中…' : '更新題目及答案'}</button>}
     {set.questions.map((q, i) => <section className="question-member-card" key={q.id}>
       <div className="question-card-heading"><strong>第 {i + 1} 題</strong><small>{types[q.type]}</small></div><p>{q.prompt}</p>
       {q.reference && <strong className="question-grid-ref">{q.reference}</strong>}
@@ -150,7 +173,7 @@ export function QuestionMember({ member, status, onView, onOverview, onScan, onB
       {byId.has(q.id) ? <div className="question-revealed"><strong>已公布答案</strong><p>{byId.get(q.id)}</p></div> : <p className="question-awaiting">答案尚未公布</p>}
     </section>)}
     {answers.length > 0 && <button className="secondary-button question-overview-open" onClick={onOverview}><MapPin size={16}/>在地圖總覽已公布答案</button>}
-    <p className="modal-footnote">顯示方位或三角題會取代目前的題目線，但不會修改繪製路線／GPX。座標題的標記是 10 米格中心；請自行對照紙圖。</p>
+    <p className="modal-footnote">此手機目前只保存一套多題題組；讀取另一個活動或不同題組前會提示取代它。顯示方位或三角題會取代目前的題目線，但不會修改繪製路線／GPX。座標題的標記是 10 米格中心；請自行對照紙圖。</p>
     <div className="modal-actions"><button className="secondary-button" onClick={onBack}>返回</button><button className="primary-button" onClick={onScan}><QrCode size={16}/>讀取題目／答案</button></div>
   </div>;
 }

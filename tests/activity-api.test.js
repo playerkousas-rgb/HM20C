@@ -79,6 +79,42 @@ describe('authorized question activity', () => {
     vi.advanceTimersByTime(7 * 24 * 60 * 60 * 1000);
     expect((await request(store, { id })).status).toBe(404);
   });
+  it('isolates groups with separate activity QR IDs and owner keys, and lets each leader extend only their own deadline', async () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date('2026-11-01T00:00:00Z'));
+    const store = createMemoryActivityStore();
+    const day = 24 * 60 * 60 * 1000;
+    const start = Date.now();
+    const login = () => issueLeaderSession(password);
+    const a = await request(store, { method: 'POST', auth: login(), body: { set, expiresAt: start + day } });
+    const b = await request(store, { method: 'POST', auth: login(), body: { set, expiresAt: start + 2 * day } });
+    expect(a.status).toBe(201); expect(b.status).toBe(201);
+    expect(a.body.id).not.toBe(b.body.id);
+    expect(a.body.ownerKey).not.toBe(b.body.ownerKey);
+    expect((await request(store, { method: 'PUT', auth: login(), body: { id: b.body.id, ownerKey: a.body.ownerKey, expectedVersion: 1, action: 'extend', expiresAt: start + 3 * day } })).status).toBe(403);
+    const release = await request(store, { method: 'PUT', auth: login(), body: { id: a.body.id, ownerKey: a.body.ownerKey, expectedVersion: 1, set, action: 'release', questionIds: [set.questions[0].id] } });
+    expect(release.body.id).toBe(a.body.id);
+    expect(release.body.expiresAt).toBe(start + day); // edits do not renew the deadline
+    expect((await request(store, { id: b.body.id })).body.answers).toEqual([]);
+    const invalid = await request(store, { method: 'PUT', auth: login(), body: { id: a.body.id, ownerKey: a.body.ownerKey, expectedVersion: 2, action: 'extend', expiresAt: start + day } });
+    expect(invalid.body.error).toBe('invalid_expiry');
+    const extended = await request(store, { method: 'PUT', auth: login(), body: { id: a.body.id, ownerKey: a.body.ownerKey, expectedVersion: 2, action: 'extend', expiresAt: start + 3 * day } });
+    expect(extended.body.id).toBe(a.body.id);
+    expect(extended.body.expiresAt).toBe(start + 3 * day);
+    expect((await request(store, { id: b.body.id })).body.expiresAt).toBe(start + 2 * day);
+    vi.advanceTimersByTime(2 * day);
+    expect((await request(store, { id: b.body.id })).status).toBe(404);
+    expect((await request(store, { id: a.body.id })).status).toBe(200);
+    vi.advanceTimersByTime(day);
+    expect((await request(store, { id: a.body.id })).status).toBe(404);
+    expect((await request(store, { method: 'PUT', auth: login(), body: { id: a.body.id, ownerKey: a.body.ownerKey, expectedVersion: 3, action: 'extend', expiresAt: Date.now() + day } })).status).toBe(404);
+  });
+  it('rejects invalid custom expiry dates', async () => {
+    const store = createMemoryActivityStore();
+    for (const expiresAt of [0, Date.now() + 1000, Date.now() + 366 * 24 * 60 * 60 * 1000, 'tomorrow']) {
+      const result = await request(store, { method: 'POST', body: { set, expiresAt } });
+      expect(result.status).toBe(400); expect(result.body.error).toBe('invalid_expiry');
+    }
+  });
   it('returns a clear error instead of silently storing activities in memory', async () => {
     const req = Readable.from([]); req.url = '/?id=AAAAAAAAAAAAAAAAAAAAAA'; req.method = 'GET'; req.headers = {};
     const res = { setHeader() {}, end(value) { this.data = value; } };
@@ -86,8 +122,17 @@ describe('authorized question activity', () => {
     expect(res.statusCode).toBe(503);
     expect(JSON.parse(res.data)).toEqual({ error: 'storage_not_configured' });
   });
+  it('does not access old Redis credentials unless the legacy backend is explicitly enabled', async () => {
+    const fetchMock = vi.fn(); vi.stubGlobal('fetch', fetchMock);
+    const req = Readable.from([]); req.url = '/?id=AAAAAAAAAAAAAAAAAAAAAA'; req.method = 'GET'; req.headers = {};
+    const res = { setHeader() {}, end(value) { this.data = value; } };
+    await handler(req, res, { env: { UPSTASH_REDIS_REST_URL: 'https://example.test', UPSTASH_REDIS_REST_TOKEN: 'old-token' }, password });
+    expect(res.statusCode).toBe(503); expect(fetchMock).not.toHaveBeenCalled();
+  });
   it('uses the Upstash REST command format, atomic Lua and expiry without exposing credentials', async () => {
-    const record = { version: 1, set, released: [], ownerHash: 'private', updatedAt: 123, expiresAt: 456 };
+    vi.useFakeTimers(); vi.setSystemTime(new Date('2026-11-01T00:00:00Z'));
+    const now = Date.now();
+    const record = { version: 1, set, released: [], ownerHash: 'private', updatedAt: now, expiresAt: now + 604800000 };
     const results = ['OK', JSON.stringify(record), 1, 1];
     const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ result: results.shift() }) }));
     vi.stubGlobal('fetch', fetchMock);
@@ -102,7 +147,9 @@ describe('authorized question activity', () => {
     expect(JSON.parse(firstOptions.body)).toEqual(['SET', 'hm20c:activity:v1:roomId', JSON.stringify(record), 'EX', 604800, 'NX']);
     const cas = JSON.parse(fetchMock.mock.calls[2][1].body);
     expect(cas[0]).toBe('EVAL'); expect(cas[1]).toContain("current.version");
+    expect(cas[1]).toContain('current.expiresAt');
     expect(cas.slice(2, 5)).toEqual([1, 'hm20c:activity:v1:roomId', 1]);
+    expect(cas.slice(6)).toEqual([604800, now]);
     const deleted = JSON.parse(fetchMock.mock.calls[3][1].body);
     expect(deleted[1]).toContain("redis.call('DEL'");
   });

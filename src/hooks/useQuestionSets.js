@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { ACTIVITY_KEY, BANK_KEY, MEMBER_KEY, loadActivities, loadBank, loadMember, newQuestionSet, readActivities, readBank, saveJson, validateQuestionSet } from '../lib/questionSet';
+import { useRef, useState } from 'react';
+import { ACTIVITY_KEY, BANK_KEY, MEMBER_KEY, loadActivities, loadBank, loadMember, newId, newQuestionSet, readActivities, readBank, saveJson, validateQuestionSet } from '../lib/questionSet';
 import { createActivity, getActivity, stopActivity, updateActivity } from '../lib/activityClient';
 import { createBankBackup, mergeBackupActivities, validateBankBackup } from '../lib/bankBackup';
 
@@ -22,7 +22,7 @@ export function mergeSnapshot(previous, value) {
   for (const answer of value.answers) merged.set(answer.id, answer);
   return { set: value.set, answers: [...merged.values()], activityId: value.id, version: value.version, syncedAt: Date.now() };
 }
-export function useQuestionSets({ leaderActive, token, open, notify }) {
+export function useQuestionSets({ leaderActive, token, open, notify, onUnauthorized }) {
   const [bank, setBank] = useState(loadBank);
   const [activities, setActivities] = useState(loadActivities);
   const [selectedId, setSelectedId] = useState(null);
@@ -32,48 +32,47 @@ export function useQuestionSets({ leaderActive, token, open, notify }) {
   const [member, setMember] = useState(loadMember);
   const [status, setStatus] = useState({ message: '' });
   const [busy, setBusy] = useState(false);
+  const [memberBusy, setMemberBusy] = useState(false);
   const [error, setError] = useState('');
   const memberRef = useRef(member); memberRef.current = member;
+  const memberBusyRef = useRef(false);
+  const joinSequence = useRef(0);
   const selected = bank.find((set) => set.id === selectedId) || null;
   const activity = selected ? activities[selected.id] : null;
-  const memberActivityId = member?.activityId || null;
+  function writeError(cause) {
+    setError(cause.message);
+    if (cause.code === 'unauthorized' && token) onUnauthorized?.(token);
+  }
 
-  useEffect(() => {
-    if (!memberActivityId) return undefined;
-    let alive = true; let timer; let running = false;
-    async function refresh() {
-      clearTimeout(timer);
-      if (!alive || running) return;
-      if (document.hidden || navigator.onLine === false) {
-        if (alive && navigator.onLine === false) setStatus({ error: true, message: `目前離線；${savedAt(memberRef.current?.syncedAt)}。重連後自動同步。` });
-        timer = setTimeout(refresh, 6000); return;
-      }
-      running = true;
-      try {
-        const value = await getActivity(memberActivityId);
-        if (!alive) return;
-        const previous = memberRef.current;
-        if (previous?.activityId !== memberActivityId) return;
-        const next = mergeSnapshot(previous, value);
-        if (!next) {
-          setStatus({ error: true, message: '本機與線上題組版本或內容不一致；請領袖先核對並同步活動。' });
-        } else {
-          if (previous.version && value.version > previous.version) notify(value.answers.length > previous.answers.length ? '領袖已公布答案；打開「題目」查看。' : '活動題目已更新；打開「題目」查看。');
-          memberRef.current = next; setMember(next);
-          if (!safeStore(MEMBER_KEY, next)) setStatus({ error: true, message: '已連網更新，但手機未能儲存離線副本。' });
-          else setStatus({ message: `已連網同步 · ${savedAt(next.syncedAt)}` });
-        }
-      } catch (cause) {
-        if (alive) setStatus({ error: true, message: `${cause.message} ${savedAt(memberRef.current?.syncedAt)}。` });
-      } finally {
-        running = false;
-        if (alive) timer = setTimeout(refresh, 6000);
-      }
+  // No timer, background fetch or reconnect listener: joining and this explicit
+  // button are the only member-initiated network requests for an activity.
+  async function refreshMember() {
+    const activityId = memberRef.current?.activityId;
+    if (!activityId || memberBusyRef.current) return;
+    if (navigator.onLine === false) {
+      setStatus({ error: true, message: `目前離線；${savedAt(memberRef.current?.syncedAt)}。連網後請按「更新題目及答案」。` });
+      return;
     }
-    const resume = () => { if (!document.hidden && navigator.onLine !== false) { clearTimeout(timer); if (!running) void refresh(); } };
-    void refresh(); window.addEventListener('online', resume); document.addEventListener('visibilitychange', resume);
-    return () => { alive = false; clearTimeout(timer); window.removeEventListener('online', resume); document.removeEventListener('visibilitychange', resume); };
-  }, [memberActivityId]);
+    memberBusyRef.current = true; setMemberBusy(true);
+    try {
+      const value = await getActivity(activityId);
+      const previous = memberRef.current;
+      // The member may have scanned a different activity while this was in flight.
+      if (previous?.activityId !== activityId) return;
+      const next = mergeSnapshot(previous, value);
+      if (!next) {
+        setStatus({ error: true, message: '本機與線上題組版本或內容不一致；請領袖先核對並同步活動。' });
+        return;
+      }
+      memberRef.current = next; setMember(next);
+      if (!safeStore(MEMBER_KEY, next)) setStatus({ error: true, message: '已連網更新，但手機未能儲存離線副本。' });
+      else setStatus({ message: `已手動更新 · ${savedAt(next.syncedAt)}` });
+    } catch (cause) {
+      if (memberRef.current?.activityId === activityId) setStatus({ error: true, message: `${cause.message} ${savedAt(memberRef.current?.syncedAt)}。` });
+    } finally {
+      memberBusyRef.current = false; setMemberBusy(false);
+    }
+  }
 
   function saveActivities(next) {
     // Preserve other sets written by another tab while this one was open.
@@ -117,9 +116,26 @@ export function useQuestionSets({ leaderActive, token, open, notify }) {
         const result = await updateActivity(record, 'sync', { set: nextSet }, token);
         const next = { ...activities, [nextSet.id]: metadata(record, result) };
         if (saveActivities(next)) notify('題組已儲存並同步；答案需重新公布。');
-      } catch (cause) { setError(`本機已儲存，但未同步：${cause.message}`); notify('題組只儲存在本機；請稍後更新活動。'); }
+      } catch (cause) {
+        setError(`本機已儲存，但未同步：${cause.message}`);
+        if (cause.code === 'unauthorized' && token) onUnauthorized?.(token);
+        else notify('題組只儲存在本機；請稍後更新活動。');
+      }
       finally { setBusy(false); }
     } else notify(record ? '題組已存在本機；連網後請更新活動。' : '題組已儲存在本機。');
+  }
+  function duplicate() {
+    if (!selected || !leaderActive || busy) return;
+    const latest = readBank();
+    if (!latest) { setError('本機題庫損壞或不能讀取；未複製。'); return; }
+    if (JSON.stringify(latest.find((set) => set.id === selected.id) || null) !== JSON.stringify(selected)) { setError('另一分頁已修改此題組；請先核對。'); return; }
+    if (latest.length >= 50) { setError('題庫最多 50 組，請先清理不需要的題組。'); return; }
+    const prefix = Array.from(selected.name).reduce((text, character) => text.length + character.length <= 44 ? text + character : text, '');
+    const copy = validateQuestionSet({ ...selected, id: newId(), name: `${prefix}（副本）`, revision: 1,
+      questions: selected.questions.map((question) => ({ ...question, id: newId() })) }, { privateAnswers: true });
+    if (!copy || !safeStore(BANK_KEY, [...latest, copy])) { setError('未能複製題組；請檢查手機儲存空間。'); return; }
+    setBank([...latest, copy]); setSelectedId(copy.id); setError('');
+    notify('已複製題組；副本沒有活動，可另建獨立 QR。');
   }
   function remove() {
     if (!selected) return;
@@ -134,17 +150,17 @@ export function useQuestionSets({ leaderActive, token, open, notify }) {
     setSelectedId(null); if (stored) setError('');
   }
   function share(mode) { setShareMode(mode); open('question-share'); }
-  async function createOnline() {
+  async function createOnline(expiresAt) {
     if (!selected || !leaderActive || !token || busy) return;
     const latest = readActivities();
     if (!latest) { setError('本機活動管理資料不能讀取；未建立活動。'); return; }
     if (!activity && latest[selected.id]) { setActivities(latest); setError('另一分頁已建立活動，請先檢查活動狀態。'); return; }
     setBusy(true); setError('');
     try {
-      const result = await createActivity(selected, token);
+      const result = await createActivity(selected, token, expiresAt);
       if (!keyPattern.test(result.ownerKey || '') || !keyPattern.test(result.setFingerprint || '')) throw new Error('活動回應未包含有效管理資料。');
       if (saveActivities({ ...activities, [selected.id]: metadata(null, result, result.ownerKey) })) notify('已建立活動；可分享活動 QR。');
-    } catch (cause) { setError(cause.message); }
+    } catch (cause) { writeError(cause); }
     finally { setBusy(false); }
   }
   async function update(action, data = {}) {
@@ -152,8 +168,8 @@ export function useQuestionSets({ leaderActive, token, open, notify }) {
     setBusy(true); setError('');
     try {
       const result = await updateActivity(activity, action, data, token);
-      if (saveActivities({ ...activities, [selected.id]: metadata(activity, result) })) notify(action === 'release' ? '答案已公布；連網成員會自動更新。' : '活動題目已更新。');
-    } catch (cause) { setError(cause.message); }
+      if (saveActivities({ ...activities, [selected.id]: metadata(activity, result) })) notify(action === 'release' ? '答案已公布；請成員連網後按「更新題目及答案」。' : action === 'extend' ? '期限已延長；活動 QR 不變。' : '活動題目已更新；請成員手動更新。');
+    } catch (cause) { writeError(cause); }
     finally { setBusy(false); }
   }
   async function refresh() {
@@ -173,7 +189,7 @@ export function useQuestionSets({ leaderActive, token, open, notify }) {
       await stopActivity(activity, token);
       const next = { ...activities }; delete next[selected.id];
       if (saveActivities(next)) notify('活動已結束；曾公布的答案仍可能留在成員手機。');
-    } catch (cause) { setError(cause.message); }
+    } catch (cause) { writeError(cause); }
     finally { setBusy(false); }
   }
   function unlinkOnline() {
@@ -221,24 +237,35 @@ export function useQuestionSets({ leaderActive, token, open, notify }) {
     } catch (cause) { setError(cause?.message || '無法讀取私人備份。'); }
   }
   async function join(id) {
+    const previous = memberRef.current;
+    if (previous && previous.activityId !== id && !window.confirm('讀取另一個活動會取代這部手機目前保存的題組及答案。繼續？')) {
+      open('question-member'); return;
+    }
+    const sequence = ++joinSequence.current;
     setStatus({ message: '正在連接活動…' });
-    const cached = memberRef.current?.activityId === id ? memberRef.current : null;
+    const cached = previous?.activityId === id ? previous : null;
     if (cached) open('question-member');
     try {
       const value = await getActivity(id);
+      if (sequence !== joinSequence.current) return;
       const next = mergeSnapshot(cached, value);
       if (!next) { setStatus({ error: true, message: '本機與線上題組版本或內容不一致；請領袖先核對並同步活動。' }); open('question-member'); return; }
-      saveMember(next); setStatus({ message: `已連網同步 · ${savedAt(next.syncedAt)}` }); open('question-member');
+      saveMember(next); setStatus({ message: `已讀取活動 · ${savedAt(next.syncedAt)}；之後請手動更新。` }); open('question-member');
     } catch (cause) {
+      if (sequence !== joinSequence.current) return;
       if (cached) { setStatus({ error: true, message: `${cause.message} ${savedAt(cached.syncedAt)}。` }); open('question-member'); }
       else { notify(cause.message); open('exercise'); }
     }
   }
   function receive(packet) {
     if (packet.kind === 'activity') { void join(packet.id); return; }
+    joinSequence.current += 1; // A late response from a previous scan must not replace this packet.
     if (packet.kind === 'questions' || (packet.kind === 'answers' && packet.v === 2)) {
       const previous = memberRef.current;
       const matchingId = previous?.set.id === packet.set.id;
+      if (previous && !matchingId && !window.confirm('讀取另一套題組會取代這部手機目前保存的題組及答案。繼續？')) {
+        open('question-member'); return;
+      }
       const same = matchingId && previous.set.revision === packet.set.revision;
       if (matchingId && previous.set.revision > packet.set.revision) throw new Error('版本不同：此 QR 比手機內的題目舊，請向領袖索取新版。');
       if (same && JSON.stringify(previous.set) !== JSON.stringify(packet.set)) throw new Error('相同版本的題目內容不同，請向領袖重新索取。');
@@ -246,7 +273,7 @@ export function useQuestionSets({ leaderActive, token, open, notify }) {
       if (packet.kind === 'answers') for (const answer of packet.answers) answers.set(answer.id, answer);
       const activityId = matchingId ? previous.activityId : null;
       saveMember({ set: packet.set, answers: [...answers.values()], activityId, version: same ? previous.version : 0, syncedAt: same ? previous.syncedAt : 0 });
-      setStatus({ message: activityId ? '已讀取離線資料，連網後會繼續同步。' : '' }); open('question-member'); return;
+      setStatus({ message: activityId ? '已讀取離線資料；連網後可手動更新活動。' : '' }); open('question-member'); return;
     }
     if (packet.kind === 'answers') {
       // Compatibility with previously issued v1 answer-only QR/JSON.
@@ -259,7 +286,8 @@ export function useQuestionSets({ leaderActive, token, open, notify }) {
       saveMember({ ...previous, answers: [...answers.values()] }); open('question-member');
     }
   }
-  return { bank, activities, selected, activity, draft, setDraft, hasDraft, resumeDraft: () => open('question-edit'), shareMode, member, status, busy, error,
-    create, edit, select, save, remove, share, createOnline, sync: () => update('sync', { set: selected }),
-    release: (questionIds) => update('release', { questionIds, set: selected }), refresh, stopOnline, unlinkOnline, backup, importBackup, receive };
+  return { bank, activities, selected, activity, draft, setDraft, hasDraft, resumeDraft: () => open('question-edit'), shareMode, member, status, busy, memberBusy, error,
+    create, edit, select, save, duplicate, remove, share, createOnline, sync: () => update('sync', { set: selected }),
+    release: (questionIds) => update('release', { questionIds, set: selected }), extend: (expiresAt) => update('extend', { expiresAt }),
+    refresh, refreshMember, stopOnline, unlinkOnline, backup, importBackup, receive };
 }

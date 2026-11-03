@@ -103,6 +103,7 @@ function App() {
   const [pendingExercise, setPendingExercise] = useState(null);
   const [leaderUntil, setLeaderUntil] = useState(0);
   const [leaderToken, setLeaderToken] = useState(null);
+  const leaderTokenRef = useRef(null); leaderTokenRef.current = leaderToken;
   const [questionMarkId, setQuestionMarkId] = useState(null);
   const [questionMarkDraft, setQuestionMarkDraft] = useState(null);
   const [questionOverview, setQuestionOverview] = useState(null);
@@ -187,14 +188,19 @@ function App() {
 
   useEffect(() => {
     if (!leaderUntil) return undefined;
-    const expire = () => { if (Date.now() >= leaderUntil) { setLeaderUntil(0); setLeaderToken(null); } };
+    const expire = () => { if (Date.now() >= leaderUntil) { leaderTokenRef.current = null; setLeaderUntil(0); setLeaderToken(null); } };
     const timer = setTimeout(expire, Math.max(0, leaderUntil - Date.now()));
     document.addEventListener('visibilitychange', expire);
     return () => { clearTimeout(timer); document.removeEventListener('visibilitychange', expire); };
   }, [leaderUntil]);
 
   const leaderActive = leaderUntil > Date.now();
-  const quiz = useQuestionSets({ leaderActive, token: leaderToken, open: setModal, notify });
+  const quiz = useQuestionSets({ leaderActive, token: leaderToken, open: setModal, notify, onUnauthorized: (failedToken) => {
+    // A late response from an older login must not lock a newer session.
+    if (leaderTokenRef.current !== failedToken) return;
+    leaderTokenRef.current = null; setLeaderToken(null); setLeaderUntil(0);
+    notify('領袖驗證已失效；本機資料未刪除，請連網重新解鎖。');
+  } });
   const markingQuestion = quiz.draft?.questions.find((q) => q.id === questionMarkId);
   const markingLimit = markingQuestion ? ({ grid: 1, bearing: 2, resection: 3 }[markingQuestion.type] || null) : null;
   const markingDraft = questionMarkId ? questionMarkDraft : exerciseDraft;
@@ -774,14 +780,14 @@ function App() {
     <input type="file" ref={fileRef} accept=".gpx,application/gpx+xml,application/xml,text/xml" hidden onChange={importFile}/>
     {toast && <div className="toast" role="status">{toast}</div>}
 
-    {modal === 'leader' && <Modal eyebrow="LEADER MODE" title="領袖模式" onClose={() => setModal(null)}><LeaderContent active={leaderActive} onUnlock={(seconds, token) => { setLeaderToken(token); setLeaderUntil(Date.now() + seconds * 1000); setModal(null); notify('領袖模式已開啟；圖心不是你的位置。'); }} onLock={() => { setLeaderToken(null); setLeaderUntil(0); setModal(null); notify('已返回成員模式。'); }}/></Modal>}
+    {modal === 'leader' && <Modal eyebrow="LEADER MODE" title="領袖模式" onClose={() => setModal(null)}><LeaderContent active={leaderActive} onUnlock={(seconds, token) => { leaderTokenRef.current = token; setLeaderToken(token); setLeaderUntil(Date.now() + seconds * 1000); setModal(null); notify('領袖模式已開啟；圖心不是你的位置。'); }} onLock={() => { leaderTokenRef.current = null; setLeaderToken(null); setLeaderUntil(0); setModal(null); notify('已返回成員模式。'); }}/></Modal>}
     {modal === 'exercise' && <Modal eyebrow="MAP EXERCISES" title="題目與 QR Code" onClose={() => setModal(null)}><ExerciseHome leader={leaderActive} exercise={exercise} memberSet={quiz.member?.set} onCreate={editExercise} onBank={() => { quiz.select(null); setModal('question-bank'); }} onMember={() => setModal('question-member')} onScan={() => setModal('exercise-scan')} onRestore={() => exercise && showExercise(exercise, { preserveLines: true })} onClear={() => setModal('exercise-clear')} onGoPoint={(point, index) => { mapRef.current?.goTo(point.lat, point.lon); setModal(null); setMapExpanded(true); notify(`已移至題目地點 ${String.fromCharCode(65 + index)}；比例保持鎖定。`); }}/></Modal>}
     {modal === 'exercise-edit' && <Modal eyebrow="LEADER EXERCISE" title="領袖設題" onClose={() => setModal(null)}>{leaderActive && exerciseDraft ? <ExerciseEditor draft={exerciseDraft} onChange={setExerciseDraft} onMark={markExercise} onNew={() => setExerciseDraft(newExerciseDraft())} onCancel={() => setModal('exercise')}/> : <p className="modal-intro">領袖模式已結束，請重新登入後繼續設題。</p>}</Modal>}
     {modal === 'exercise-scan' && <Modal eyebrow="SCAN EXERCISE" title="讀取題目" onClose={() => setModal(null)}><ExerciseScanner onRead={receiveShared} onBack={() => setModal('exercise')}/></Modal>}
-    {modal === 'question-bank' && <Modal eyebrow="LEADER QUESTION BANK" title="領袖題庫" onClose={() => setModal(null)}>{leaderActive ? <QuestionBank sets={quiz.bank} selected={quiz.selected} activity={quiz.activity} busy={quiz.busy} error={quiz.error} hasDraft={quiz.hasDraft} onResumeDraft={quiz.resumeDraft} onSelect={quiz.select} onCreate={quiz.create} onEdit={quiz.edit} onDelete={quiz.remove} onBack={() => quiz.select(null)} onOverview={() => showQuestionOverview('bank')} onShare={quiz.share} onCreateActivity={quiz.createOnline} onSync={quiz.sync} onRefresh={quiz.refresh} onRelease={quiz.release} onStopActivity={quiz.stopOnline} onUnlinkActivity={quiz.unlinkOnline} onBackup={quiz.backup} onImport={quiz.importBackup}/> : <p className="modal-intro">領袖模式已結束；請重新解鎖以管理題庫。</p>}</Modal>}
+    {modal === 'question-bank' && <Modal eyebrow="LEADER QUESTION BANK" title="領袖題庫" onClose={() => setModal(null)}>{leaderActive ? <QuestionBank sets={quiz.bank} selected={quiz.selected} activity={quiz.activity} busy={quiz.busy} error={quiz.error} hasDraft={quiz.hasDraft} onResumeDraft={quiz.resumeDraft} onSelect={quiz.select} onCreate={quiz.create} onEdit={quiz.edit} onDuplicate={quiz.duplicate} onDelete={quiz.remove} onBack={() => quiz.select(null)} onOverview={() => showQuestionOverview('bank')} onShare={quiz.share} onCreateActivity={quiz.createOnline} onExtendActivity={quiz.extend} onSync={quiz.sync} onRefresh={quiz.refresh} onRelease={quiz.release} onStopActivity={quiz.stopOnline} onUnlinkActivity={quiz.unlinkOnline} onBackup={quiz.backup} onImport={quiz.importBackup}/> : <p className="modal-intro">領袖模式已結束；請重新解鎖以管理題庫。</p>}</Modal>}
     {modal === 'question-edit' && <Modal eyebrow="EDIT QUESTION SET" title="編輯題組" onClose={() => setModal('question-bank')}>{leaderActive && quiz.draft ? <QuestionSetEditor draft={quiz.draft} busy={quiz.busy} onChange={quiz.setDraft} onMark={markQuestion} onOverview={() => showQuestionOverview('draft')} onSave={quiz.save} onCancel={() => setModal('question-bank')}/> : <p className="modal-intro">領袖模式已結束；草稿仍保留在本頁。</p>}</Modal>}
     {modal === 'question-share' && <Modal eyebrow="SHARE QUESTION SET" title="分享題組" onClose={() => setModal('question-bank')}>{leaderActive && quiz.selected ? <QuestionShare mode={quiz.shareMode} set={quiz.selected} activity={quiz.activity} onBack={() => setModal('question-bank')}/> : <p className="modal-intro">請先解鎖領袖模式。</p>}</Modal>}
-    {modal === 'question-member' && <Modal eyebrow="QUESTION SET" title="多題套題" onClose={() => setModal(null)}>{quiz.member ? <QuestionMember member={quiz.member} status={quiz.status} onView={(question) => { const task = questionAsExercise(question); if (task) receiveExercise(task); else notify('此題沒有可顯示的地圖標記。'); }} onOverview={() => showQuestionOverview('member')} onScan={() => setModal('exercise-scan')} onBack={() => setModal('exercise')}/> : <p className="modal-intro">請先讀取題組或活動 QR。</p>}</Modal>}
+    {modal === 'question-member' && <Modal eyebrow="QUESTION SET" title="多題套題" onClose={() => setModal(null)}>{quiz.member ? <QuestionMember member={quiz.member} status={quiz.status} busy={quiz.memberBusy} onRefresh={quiz.refreshMember} onView={(question) => { const task = questionAsExercise(question); if (task) receiveExercise(task); else notify('此題沒有可顯示的地圖標記。'); }} onOverview={() => showQuestionOverview('member')} onScan={() => setModal('exercise-scan')} onBack={() => setModal('exercise')}/> : <p className="modal-intro">請先讀取題組或活動 QR。</p>}</Modal>}
     {modal === 'exercise-clear' && <Modal eyebrow="CLEAR EXERCISE" title="清除這題？" onClose={() => setModal('exercise')}><p className="modal-intro">這會移除題目標記，以及屬於此題的方位或三角地標及方向；路線與 GPX 不受影響。</p><div className="modal-actions"><button className="secondary-button" onClick={() => setModal('exercise')}>取消</button><button className="primary-button" onClick={clearExercise}>清除題目</button></div></Modal>}
     {modal === 'exercise-replace' && <Modal eyebrow="READ EXERCISE" title="讀取新題目？" onClose={() => { setPendingExercise(null); setModal(null); }}><p className="modal-intro">讀取會取代目前的題目或方位／三角線；路線與 GPX 不受影響。</p><div className="modal-actions"><button className="secondary-button" onClick={() => { setPendingExercise(null); setModal(null); }}>取消</button><button className="primary-button" onClick={() => { if (pendingExercise) showExercise(pendingExercise); setPendingExercise(null); }}>讀取題目</button></div></Modal>}
     {modal === 'offline' && <Modal eyebrow="OFFLINE MAPS" title="預載離線地圖" onClose={() => { if (sheetAbort.current) sheetAbort.current.abort(); else if (offlineAbort.current) offlineAbort.current.abort(); else setModal(null); }}><OfflineContent plan={offlinePlan} areas={offlineAreas} job={offlineJob} busy={offlineBusy} install={install} onDownload={downloadOffline} onStop={() => offlineAbort.current?.abort()} onSelect={openSavedArea} onClear={clearOffline} sheet={{ center: view, basemap: prefs.basemap, sheets, activeId: activeSheetId, listError: sheetListError, job: sheetJob, busy: sheetBusy, onDownload: (id) => processSheet(id), onImport: processSheet, onStop: () => sheetAbort.current?.abort(), onSelect: showStoredSheet, onDelete: removeStoredSheet, onOnline: useOnlineMap }}/></Modal>}

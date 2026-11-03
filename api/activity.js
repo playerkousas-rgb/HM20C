@@ -6,6 +6,11 @@ import { ACTIVITY_TTL_SECONDS, redisFromEnv } from '../server/activity-store.js'
 const MAX_BODY = 32768;
 const ID = /^[A-Za-z0-9_-]{22,64}$/;
 const KEY = /^[A-Za-z0-9_-]{43}$/;
+const MIN_LIFETIME_MS = 60 * 1000;
+const MAX_LIFETIME_MS = 365 * 24 * 60 * 60 * 1000;
+function validExpiry(value, now) {
+  return Number.isSafeInteger(value) && value >= now + MIN_LIFETIME_MS && value <= now + MAX_LIFETIME_MS;
+}
 function reply(res, status, value) {
   res.statusCode = status;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -54,7 +59,11 @@ function publicView(id, record) {
 
 export default async function handler(req, res, options = {}) {
   if (!['GET', 'POST', 'PUT', 'DELETE'].includes(req.method)) return reply(res, 405, { error: 'method' });
-  const store = options.store || redisFromEnv(options.env || process.env);
+  const env = options.env || process.env;
+  // The free Cloudflare Worker injects its D1 store. A legacy Vercel/Redis
+  // deployment must be explicitly opted in, so it cannot start incurring Redis
+  // usage merely because old credentials remain configured.
+  const store = options.store || (env.ACTIVITY_ALLOW_LEGACY_REDIS === '1' ? redisFromEnv(env) : null);
   if (!store) return reply(res, 503, { error: 'storage_not_configured' });
   const secret = options.password ?? process.env.LEADER_PASSWORD ?? '';
   const url = new URL(req.url || '/api/activity', 'http://local');
@@ -63,21 +72,28 @@ export default async function handler(req, res, options = {}) {
     if (!ID.test(id)) return reply(res, 400, { error: 'invalid_id' });
     try {
       const record = await store.get(id);
-      if (!record) return reply(res, 404, { error: 'not_found' });
+      if (!record || !Number.isSafeInteger(record.expiresAt) || record.expiresAt <= Date.now()) return reply(res, 404, { error: 'not_found' });
       return reply(res, 200, publicView(id, record));
     } catch { return reply(res, 503, { error: 'storage_unavailable' }); }
   }
-  if (!secret) return reply(res, 503, { error: 'leader_not_configured' });
-  if (!authorized(req, leaderSigningSecret(secret, options.env || process.env))) return reply(res, 401, { error: 'unauthorized' });
+  // Only the Cloudflare adapter may set this internal flag, after checking
+  // the leader session against the current Production Vercel deployment.
+  if (options.trustedServerMutation !== true) {
+    if (!secret) return reply(res, 503, { error: 'leader_not_configured' });
+    if (!authorized(req, leaderSigningSecret(secret, options.env || process.env))) return reply(res, 401, { error: 'unauthorized' });
+  }
   if (!String(req.headers['content-type'] || '').toLowerCase().startsWith('application/json')) return reply(res, 415, { error: 'content_type' });
   let data;
   try { data = await readBody(req); } catch { return reply(res, 400, { error: 'invalid_body' }); }
   try {
     const now = Date.now();
-    const expiresAt = now + ACTIVITY_TTL_SECONDS * 1000;
     if (req.method === 'POST') {
       const set = validateQuestionSet(data?.set, { privateAnswers: true });
       if (!set) return reply(res, 400, { error: 'invalid_set' });
+      // Keep legacy clients working with the old seven-day default. New clients
+      // choose an absolute deadline; ordinary edits never extend it silently.
+      const expiresAt = data.expiresAt == null ? now + ACTIVITY_TTL_SECONDS * 1000 : data.expiresAt;
+      if (!validExpiry(expiresAt, now)) return reply(res, 400, { error: 'invalid_expiry' });
       const id = randomBytes(16).toString('base64url');
       const ownerKey = randomBytes(32).toString('base64url');
       const record = { version: 1, set, released: [], ownerHash: hash(ownerKey), updatedAt: now, expiresAt };
@@ -87,7 +103,7 @@ export default async function handler(req, res, options = {}) {
     const { id, ownerKey, expectedVersion, action } = data || {};
     if (!ID.test(id || '') || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1) return reply(res, 400, { error: 'invalid_request' });
     const record = await store.get(id);
-    if (!record) return reply(res, 404, { error: 'not_found' });
+    if (!record || !Number.isSafeInteger(record.expiresAt) || record.expiresAt <= now) return reply(res, 404, { error: 'not_found' });
     if (!matchesKey(ownerKey, record.ownerHash)) return reply(res, 403, { error: 'not_owner' });
     if (record.version !== expectedVersion) return reply(res, 409, { error: 'conflict', version: record.version });
     if (req.method === 'DELETE') {
@@ -114,8 +130,11 @@ export default async function handler(req, res, options = {}) {
       if (!Array.isArray(data.questionIds) || !data.questionIds.length || data.questionIds.length > record.set.questions.length
           || !data.questionIds.every((qid) => validId(qid) && record.set.questions.some((q) => q.id === qid))) return reply(res, 400, { error: 'invalid_questions' });
       record.released = [...new Set([...(record.released || []), ...data.questionIds])];
+    } else if (action === 'extend') {
+      if (!validExpiry(data.expiresAt, now) || data.expiresAt <= record.expiresAt) return reply(res, 400, { error: 'invalid_expiry' });
+      record.expiresAt = data.expiresAt;
     } else return reply(res, 400, { error: 'invalid_action' });
-    record.version += 1; record.updatedAt = now; record.expiresAt = expiresAt;
+    record.version += 1; record.updatedAt = now;
     const result = await store.compareSet(id, expectedVersion, record);
     if (result !== 1) return reply(res, result === 0 ? 404 : 409, { error: result === 0 ? 'not_found' : 'conflict' });
     return reply(res, 200, ownerView(id, record, ownerKey));

@@ -96,8 +96,8 @@ async function fetchActivity(request, env) {
     let bytes;
     try { bytes = await readBoundedBody(request); body = new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
     catch { return error(400, 'invalid_body', origin); }
-    // The Worker never stores the human password. Every leader mutation must
-    // be checked against the current Vercel Production password, even when an
+    // The Worker does not read or need the human password. Every leader mutation
+    // must be checked against the current Vercel Production password, even when an
     // old deployment could still issue sessions with an obsolete password.
     const failure = await verifyCurrentLeader(request, env);
     if (failure) return error(failure === 'unauthorized' ? 401 : 503, failure, origin);

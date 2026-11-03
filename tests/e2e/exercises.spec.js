@@ -101,33 +101,15 @@ test('three fixed landmarks and directional rays rotate or accept back bearings,
   expect(await page.evaluate(() => localStorage.getItem('scout-trail-map.route.v1'))).toBe(routeBefore);
 });
 
-test('leader creates a named QR on one device; a member imports the QR image and sees the same points without changing GPX', async ({ browser }) => {
-  const leaderContext = await browser.newContext({ viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true });
-  const leader = await leaderContext.newPage(); await mockMaps(leader); await leader.goto('http://127.0.0.1:5175/');
-  await expect(leader.locator('.source-pill')).toContainText('iB20000'); await login(leader);
-  await leader.getByRole('button', { name: '題目', exact: true }).click();
-  await leader.getByRole('button', { name: /領袖設題及分享/ }).click();
-  await leader.getByLabel('題目類型').selectOption('resection');
-  await leader.getByLabel('題目名稱').fill('三角網測練習');
-  await leader.getByLabel('題目說明').fill('量度三個地標的後視');
-  await leader.getByRole('button', { name: '到地圖標記' }).click();
-  await expect(leader.getByLabel('題目地標標記')).toBeVisible();
-  await waitForMapReady(leader);
-  const map = await leader.locator('.map-canvas').boundingBox();
-  for (const [x, y] of [[110, 180], [160, 270], [270, 340]]) await leader.touchscreen.tap(map.x + x, map.y + y);
-  await expect(leader.locator('.exercise-marker')).toHaveCount(3);
-  await leader.getByRole('button', { name: '完成選點' }).click();
-  await leader.getByLabel('地點 A 名稱').fill('大帽山');
-  await leader.getByLabel('地點 B 名稱').fill('高樓');
-  await leader.getByLabel('地點 C 名稱').fill('碼頭');
-  await leader.getByRole('button', { name: '產生 QR Code' }).click();
-  await expect(leader.locator('.exercise-qr img')).toBeVisible();
-  const qr = await leader.locator('.exercise-qr img').getAttribute('src');
-  const link = await leader.getByLabel('題目分享連結').inputValue();
+test('previous single-exercise QR remains readable on a member device without changing GPX', async ({ browser }) => {
+  const task = { kind: 'resection', title: '三角網測練習', description: '量度三個地標的後視', points: [
+    { lat: 22.382, lon: 114.322, name: '大帽山' },
+    { lat: 22.383, lon: 114.324, name: '高樓' },
+    { lat: 22.385, lon: 114.326, name: '碼頭' },
+  ] };
+  const link = exerciseUrl(task, 'http://127.0.0.1:5175/');
   const expected = decodeExercise(link);
-  expect(expected.points.map((p) => p.name)).toEqual(['大帽山', '高樓', '碼頭']);
-  expect(JSON.stringify(expected)).not.toMatch(/password|answer|angle/i);
-
+  const qr = await QRCode.toBuffer(link, { width: 400, margin: 4 });
   const memberContext = await browser.newContext({ viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true });
   const member = await memberContext.newPage(); await mockMaps(member); await member.goto('http://127.0.0.1:5175/');
   await expect(member.locator('.source-pill')).toContainText('iB20000');
@@ -136,9 +118,10 @@ test('leader creates a named QR on one device; a member imports the QR image and
   await expect.poll(async () => JSON.parse(await member.evaluate(() => localStorage.getItem('scout-trail-map.route.v1'))).waypoints.length).toBe(1);
   const existing = await member.evaluate(() => localStorage.getItem('scout-trail-map.route.v1'));
   await member.getByRole('button', { name: '題目', exact: true }).click();
-  await expect(member.getByRole('button', { name: /領袖設題及分享/ })).toHaveCount(0);
+  await expect(member.getByRole('button', { name: /活動題庫/ })).toHaveCount(0);
+  await expect(member.getByRole('button', { name: /固定題庫/ })).toHaveCount(0);
   await member.getByRole('button', { name: /讀取題目 QR Code/ }).click();
-  await member.getByLabel('選擇題目 QR 圖片').setInputFiles({ name: 'exercise.png', mimeType: 'image/png', buffer: Buffer.from(qr.split(',')[1], 'base64') });
+  await member.getByLabel('選擇題目 QR 圖片').setInputFiles({ name: 'exercise.png', mimeType: 'image/png', buffer: qr });
   await expect(member.locator('.resection-landmark')).toHaveCount(3);
   await expect(member.locator('.exercise-name-label')).toHaveText(['大帽山', '高樓', '碼頭']);
   expect(JSON.parse(await member.evaluate(() => localStorage.getItem('scout-trail-map.exercise.v1')))).toEqual(expected);
@@ -149,14 +132,12 @@ test('leader creates a named QR on one device; a member imports the QR image and
   await member.getByRole('button', { name: /高樓.*移至地點/ }).click();
   await expect(member.locator('.map-coordinates')).toContainText(expected.points[1].lat.toFixed(4));
   await member.reload(); await expect(member.locator('.resection-landmark')).toHaveCount(3);
-
-  // Native camera / link opening also works without an account or server-side task store.
   const linkContext = await browser.newContext({ viewport: { width: 393, height: 852 } });
   const viaLink = await linkContext.newPage(); await mockMaps(viaLink); await viaLink.goto(link);
   await expect(viaLink.locator('.resection-landmark')).toHaveCount(3);
   expect(new URL(viaLink.url()).hash).toBe('');
   await expect(viaLink.locator('.exercise-name-label')).toHaveText(['大帽山', '高樓', '碼頭']);
-  await leaderContext.close(); await memberContext.close(); await linkContext.close();
+  await memberContext.close(); await linkContext.close();
 });
 
 test('scanner rejects unrelated QR codes and confirms replacement; names are rendered as text', async ({ page }) => {

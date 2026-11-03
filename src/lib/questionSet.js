@@ -6,6 +6,7 @@ import { parseGridReference } from './utm';
 export const BANK_KEY = 'scout-trail-map.question-bank.v1';
 export const MEMBER_KEY = 'scout-trail-map.question-member.v1';
 export const ACTIVITY_KEY = 'scout-trail-map.question-activities.v1';
+export const LIBRARY_TYPES = ['activity', 'fixed'];
 const MAX_RAW = 50000;
 
 export function newId() {
@@ -16,13 +17,25 @@ export function newId() {
 export function newQuestion(type = 'grid') {
   return { id: newId(), type, ...(type === 'bearing' ? { answerMode: 'auto' } : {}), prompt: { grid: '圖上標記的八位座標是甚麼？', identify: '以下座標的地點／圖例是甚麼？', bearing: '由 A 至 B 的方位是多少？', resection: '以地標 A、B、C 作後視線，找出位置。', free: '' }[type], reference: '', points: [], answer: '' };
 }
-export function newQuestionSet() { return { id: newId(), name: '', revision: 1, questions: [newQuestion()] }; }
+export function newQuestionSet(libraryType) {
+  return { id: newId(), name: '', revision: 1, questions: [newQuestion()],
+    ...(LIBRARY_TYPES.includes(libraryType) ? { libraryType } : {}) };
+}
+
+// The category belongs only to the leader's local bank and private backup.
+// It is deliberately not part of the shared QR or the Worker question schema.
+// Old sets have no category and remain accessible in both library views.
+export function validateBankSet(input) {
+  const set = validateQuestionSet(input, { privateAnswers: true });
+  if (!set || (input.libraryType !== undefined && !LIBRARY_TYPES.includes(input.libraryType))) return null;
+  return input.libraryType ? { ...set, libraryType: input.libraryType } : set;
+}
 
 export function readBank() {
   try {
     const parsed = JSON.parse(localStorage.getItem(BANK_KEY) || '[]');
     if (!Array.isArray(parsed) || parsed.length > 50) return null;
-    const sets = parsed.map((set) => validateQuestionSet(set, { privateAnswers: true }));
+    const sets = parsed.map(validateBankSet);
     if (sets.some((set) => !set) || new Set(sets.map((set) => set.id)).size !== sets.length) return null;
     return sets;
   } catch { return null; }
@@ -146,7 +159,10 @@ export function questionPacket(set) { return { kind: 'questions', v: 1, set: pub
 export function questionShare(set, base = `${location.origin}${location.pathname}`) {
   const packet = questionPacket(set);
   if (!packet.set) throw new Error('題組資料無效。');
-  return `${base}#questions=${encode(packet)}`;
+  // Previously deployed scanners already understand the Z/base32 envelope;
+  // alphanumeric QR mode fits more questions than lowercase/base64 without
+  // changing the packet, IDs, coordinates, or compatibility with those scanners.
+  return `${base}#questions=${encode(packet, true)}`;
 }
 // v2 is a self-contained answer sheet. v1 answer-only QR remains readable.
 export function standaloneAnswerPacket(input, ids = null) {

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { BookOpen, Copy, Download, MapPin, Plus, QrCode, RefreshCw, Share2, Upload } from 'lucide-react';
 import { MAX_QUESTIONS } from '../../shared/question-set.js';
-import { standaloneAnswerPacket, answerShare, activityShare, newQuestion, questionPacket, questionShare, saveJson, validateQuestionSet } from '../lib/questionSet';
+import { standaloneAnswerPacket, answerShare, activityShare, newQuestion, questionPacket, questionShare, saveJson, validateBankSet } from '../lib/questionSet';
 import { bearingAnswerMode, calculatedBearingAnswer, leaderAnswer } from '../lib/questionOverview';
 import { loadQrEncoder } from '../lib/qrCodec';
 import { gridReference, parseGridReference } from '../lib/utm';
@@ -21,6 +21,21 @@ function nextExpiry(activity) {
 
 export function QuestionSetEditor({ draft, busy, onChange, onMark, onOverview, onSave, onCancel }) {
   const [error, setError] = useState('');
+  const [addedId, setAddedId] = useState(null);
+  const cards = useRef({});
+  useEffect(() => {
+    if (!addedId) return;
+    const card = cards.current[addedId];
+    card?.scrollIntoView({ block: 'start' });
+    card?.focus({ preventScroll: true });
+    setAddedId(null);
+  }, [addedId]);
+  function addQuestion() {
+    if (draft.questions.length >= MAX_QUESTIONS) return;
+    const question = newQuestion();
+    onChange({ ...draft, questions: [...draft.questions, question] });
+    setError(''); setAddedId(question.id);
+  }
   function questionChange(index, changes) {
     onChange({ ...draft, questions: draft.questions.map((q, i) => i === index ? { ...q, ...changes } : q) });
     setError('');
@@ -41,15 +56,19 @@ export function QuestionSetEditor({ draft, busy, onChange, onMark, onOverview, o
         ...(q.type === 'bearing' ? { answerMode: bearingAnswerMode(q) } : {}), answer: leaderAnswer(q) };
     });
     if (questions.some((q) => q.type === 'identify' && !parseGridReference(q.reference))) { setError('請檢查座標題：需要完整的 49Q／50Q 方格及八位數字。'); return; }
-    const set = validateQuestionSet({ ...draft, questions }, { privateAnswers: true });
+    const set = validateBankSet({ ...draft, questions });
     if (!set) { setError('請填好題組名稱、每條題目及答案，並完成指定的地圖標記。'); return; }
     onSave(set);
   }
   return <div className="question-editor">
-    <p className="modal-intro">題組儲存在這部手機。每題可用不同題型；答案不會放進題目 QR。</p>
-    <p className="modal-footnote">出發前請下載各組的固定題目 QR 圖片作離線後備，並預載 App 和所需地圖、以飛航模式測試。答案 QR 請由領袖另行保管。</p>
+    <p className="modal-intro">這是<strong>一套多題題組</strong>。每題可選不同題型；可再建立其他題組，每套各有自己的 QR。</p>
+    <p className="question-editor-note">每套最多 {MAX_QUESTIONS} 題。固定 QR 能否放下全部題目，亦取決於內容長度；過密時可分組或用 JSON。</p>
     <label>題組名稱<input aria-label="題組名稱" value={draft.name} maxLength={48} placeholder="例如：西貢讀圖練習" onChange={(e) => onChange({ ...draft, name: e.target.value })}/></label>
-    {draft.questions.map((q, index) => <section className="question-editor-card" key={q.id}>
+    <div className="question-editor-toolbar">
+      <div aria-live="polite"><strong>題目列表 · {draft.questions.length} / {MAX_QUESTIONS} 題</strong><small>填好每題後，可繼續新增</small></div>
+      <button className="primary-button" onClick={addQuestion} disabled={draft.questions.length >= MAX_QUESTIONS}><Plus size={16}/>新增一題</button>
+    </div>
+    {draft.questions.map((q, index) => <section className="question-editor-card" key={q.id} ref={(node) => { if (node) cards.current[q.id] = node; else delete cards.current[q.id]; }} tabIndex={-1} aria-label={`第 ${index + 1} 題`}>
       <div className="question-card-heading"><strong>第 {index + 1} 題</strong>{draft.questions.length > 1 && <button onClick={() => onChange({ ...draft, questions: draft.questions.filter((_, i) => i !== index) })}>刪除此題</button>}</div>
       <label>題型<select aria-label={`第 ${index + 1} 題題型`} value={q.type} onChange={(e) => selectType(index, e.target.value)}>{Object.entries(types).map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select></label>
       <label>題目<textarea aria-label={`第 ${index + 1} 題題目`} rows={2} maxLength={160} value={q.prompt} onChange={(e) => questionChange(index, { prompt: e.target.value })}/></label>
@@ -65,15 +84,15 @@ export function QuestionSetEditor({ draft, busy, onChange, onMark, onOverview, o
       {q.type !== 'grid' && (q.type !== 'bearing' || bearingAnswerMode(q) === 'manual') && <label>領袖答案 <small>（成員要等公布才看見）</small><textarea aria-label={`第 ${index + 1} 題答案`} rows={2} maxLength={160} value={q.answer} placeholder={q.type === 'identify' ? '自行填寫地名或圖例，例如涼亭' : q.type === 'resection' ? '自行填寫交會位置或完整八位座標' : '填寫答案或核對方法'} onChange={(e) => questionChange(index, { answer: e.target.value })}/></label>}
       {q.type === 'resection' && <small>只有三個地標不能算出交會位置；請按觀測結果核對並填寫。答案若是完整八位座標，總覽會標出該格中心。</small>}
     </section>)}
+    {draft.questions.length < MAX_QUESTIONS && <button className="secondary-button question-add-next" onClick={addQuestion}><Plus size={16}/>新增下一題（第 {draft.questions.length + 1} 題）</button>}
     <button className="secondary-button question-overview-open" onClick={onOverview}><MapPin size={16}/>在地圖總覽所有答案</button>
-    {draft.questions.length < MAX_QUESTIONS && <button className="secondary-button question-add" onClick={() => onChange({ ...draft, questions: [...draft.questions, newQuestion()] })}><Plus size={16}/>新增一題</button>}
     {error && <p className="leader-error" role="alert">{error}</p>}
     <div className="modal-actions"><button className="secondary-button" onClick={onCancel}>返回題庫</button><button className="primary-button" onClick={finish} disabled={busy}>儲存題組</button></div>
-    <p className="modal-footnote">未儲存草稿暫留本頁；關頁或重整會消失。手動答案請領袖對照實際紙圖核實；地圖不會自動辨識圖例。題目座標可被自行計算，不能防作弊。</p>
+    <p className="modal-footnote">出發前請下載各組固定題目 QR 作離線後備，預載 App 和地圖並以飛航模式測試；答案 QR 請由領袖保管。未儲存草稿只留在本頁。手動答案須核對紙圖；題目座標可被自行計算，不能防作弊。</p>
   </div>;
 }
 
-export function QuestionBank({ sets, selected, activity, busy, error, hasDraft, onResumeDraft, onSelect, onCreate, onEdit, onDuplicate, onDelete, onBack, onOverview, onShare, onCreateActivity, onExtendActivity, onSync, onRefresh, onRelease, onStopActivity, onUnlinkActivity, onBackup, onImport }) {
+export function QuestionBank({ mode, sets, activities, selected, activity, busy, error, hasDraft, draftMode, onResumeDraft, onSelect, onCreate, onEdit, onDuplicate, onCopyToOther, onDelete, onBack, onMenu, onOverview, onShare, onCreateActivity, onExtendActivity, onSync, onRefresh, onRelease, onStopActivity, onUnlinkActivity, onBackup, onImport }) {
   const input = useRef(null);
   const [confirm, setConfirm] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
@@ -81,42 +100,68 @@ export function QuestionBank({ sets, selected, activity, busy, error, hasDraft, 
   const [expiry, setExpiry] = useState(() => nextExpiry(null));
   useEffect(() => { setConfirm(false); setConfirmStop(false); setConfirmUnlink(false); }, [selected?.id]);
   useEffect(() => { setExpiry(nextExpiry(activity)); }, [selected?.id, activity?.id, activity?.expiresAt]);
+  const fixed = mode === 'fixed';
+  // Legacy sets were shared between the two workflows. Keep them visible in
+  // both, and never unlink, rewrite, or migrate their existing activity QR.
+  // Also surface an unexpected old-version activity attached to a fixed set.
+  const visibleSets = sets.filter((set) => !set.libraryType || set.libraryType === mode || (!fixed && activities[set.id]));
+  const linkedFixed = fixed && Boolean(activity);
+  const otherName = fixed ? '活動題庫' : '固定題庫';
   return <div className="question-bank">
-    {hasDraft && <button className="secondary-button question-add" onClick={onResumeDraft}>繼續未儲存草稿</button>}
+    {hasDraft && <button className="secondary-button question-add" onClick={onResumeDraft}>繼續未儲存草稿{draftMode ? `（${draftMode === 'fixed' ? '固定題庫' : '活動題庫'}）` : ''}</button>}
     {selected ? <>
-      <p className="modal-intro"><strong>{selected.name}</strong> · {selected.questions.length} 題 · 題組版本 {selected.revision}</p>
-      <ol className="question-summary">{selected.questions.map((q, i) => <li key={q.id}><strong>{i + 1}. {q.prompt}</strong><small>{types[q.type]}{q.reference ? ` · ${q.reference}` : ''}</small><span>領袖答案：{q.answer}</span></li>)}</ol>
-      <div className="question-actions"><button onClick={onEdit} disabled={busy}>修改題目</button><button onClick={onDuplicate} disabled={busy}>複製題組</button><button onClick={onOverview}><MapPin size={15}/>在地圖總覽所有答案</button><button onClick={() => onShare('questions')}><QrCode size={15}/>題目 QR／JSON</button><button onClick={() => onShare('answers')}><QrCode size={15}/>答案 QR／JSON</button></div>
-      <p className="modal-footnote"><strong>考核：固定題目</strong>。下載題目 QR 後可離線展示；修改題目要分享新 QR。</p>
-      <div className="question-online"><strong>練習：可變題目（連網活動）</strong>
-        <p>每次建立活動都有不同 QR。各團領袖使用共用密碼，自行建立及管理自己的活動。同一手機要為同一套題目建立另一個活動，可先複製題組。</p>
+      <p className="modal-intro"><strong>{selected.name}</strong> · 共 {selected.questions.length} 題 · 版本 {selected.revision}</p>
+      {linkedFixed && <p className="question-warning">此舊題組已連接活動。為免固定題庫改題時同時更新活動，請先按「複製題組」建立獨立固定副本；原活動及 QR 不變。</p>}
+      {!fixed && selected.libraryType === 'fixed' && activity && <p className="question-warning">此題組由舊版連接了活動；可在此管理原活動。若想獨立修改固定題庫，請先複製題組。</p>}
+      <div className="question-actions">
+        <button onClick={onEdit} disabled={busy || linkedFixed}>修改題目</button>
+        <button onClick={onDuplicate} disabled={busy}>複製題組</button>
+        <button onClick={onCopyToOther} disabled={busy}>複製到{otherName}</button>
+      </div>
+      {fixed ? <div className="question-fixed">
+        <strong>固定題庫 · 本組 QR</strong>
+        <p>題目 QR 包含這套全部 {selected.questions.length} 題，不含答案；答案 QR 另有題目及所選答案。修改後需重新分享 QR，其他題組不受影響。</p>
+        <div className="question-actions"><button onClick={() => onShare('questions')}><QrCode size={15}/>題目 QR／JSON</button><button onClick={() => onShare('answers')}><QrCode size={15}/>答案 QR／JSON</button></div>
+        <small>每套可分別下載 QR；題目太長或太多會過密，請分組或使用 JSON。</small>
+      </div> : <div className="question-online">
+        <strong>活動題庫 · 連網活動</strong>
+        <p>每套可建立獨立活動 QR。更新題目或到期前延長期限時，這個活動 QR 不變；成員須連網手動更新。</p>
         {!activity ? <>
-          <label className="question-expiry">練習到期時間<input aria-label="練習到期時間" type="datetime-local" value={expiry} onChange={(e) => setExpiry(e.target.value)}/></label>
-          <small>最少 1 分鐘、最多 365 日；到期前可延長，同一活動 QR 不變。</small>
+          <label className="question-expiry">活動到期時間<input aria-label="活動到期時間" type="datetime-local" value={expiry} onChange={(e) => setExpiry(e.target.value)}/></label>
+          <small>最少 1 分鐘、最多 365 日；到期前可延長。</small>
           <button className="secondary-button" disabled={busy || !Number.isFinite(Date.parse(expiry))} onClick={() => onCreateActivity(Date.parse(expiry))}>建立連網活動</button>
         </> : <>
           <p>活動版本 {activity.version} · 線上題組版本 {activity.revision}{activity.expiresAt ? ` · ${new Date(activity.expiresAt).toLocaleString('zh-HK')} 到期` : ''}</p>
-          <label className="question-expiry">延長至<input aria-label="延長練習到期時間" type="datetime-local" value={expiry} onChange={(e) => setExpiry(e.target.value)}/></label>
-          <button className="secondary-button" disabled={busy || !Number.isFinite(Date.parse(expiry))} onClick={() => onExtendActivity(Date.parse(expiry))}>延長練習期限</button>
-          <small>須在到期前延長。到期後請先解除本機活動連結再建立新活動；結束後亦可重新建立，均須換 QR。</small>
+          <label className="question-expiry">延長至<input aria-label="延長活動到期時間" type="datetime-local" value={expiry} onChange={(e) => setExpiry(e.target.value)}/></label>
+          <button className="secondary-button" disabled={busy || !Number.isFinite(Date.parse(expiry))} onClick={() => onExtendActivity(Date.parse(expiry))}>延長活動期限</button>
+          <small>須在到期前延長。到期後先解除本機活動連結再建立新活動；結束後亦可重新建立，均須換 QR。</small>
           {activity.revision !== selected.revision && <p className="question-unsynced">本機題組有未同步修改；更新後需重新公布答案。</p>}
           <div className="question-actions"><button onClick={() => onShare('activity')}><QrCode size={15}/>活動 QR</button><button onClick={onSync} disabled={busy}><RefreshCw size={15}/>更新活動題目</button><button onClick={onRefresh} disabled={busy}>重新整理狀態</button></div>
           {!confirmStop ? <button className="text-button" onClick={() => setConfirmStop(true)} disabled={busy}>結束連網活動</button> : <div className="question-release"><span>結束後舊活動 QR 失效；已公布的答案仍可能留在手機。</span><button disabled={busy} onClick={() => { setConfirmStop(false); onStopActivity(); }}>確認結束活動</button><button onClick={() => setConfirmStop(false)}>取消結束</button></div>}
           {!confirmUnlink ? <button className="text-button" onClick={() => setConfirmUnlink(true)} disabled={busy}>解除本機活動連結</button> : <div className="question-release"><span>會移除本機管理鑰匙；舊活動仍可用至到期，先備份或先結束活動。</span><button disabled={busy} onClick={() => { setConfirmUnlink(false); onUnlinkActivity(); }}>確認解除連結</button><button onClick={() => setConfirmUnlink(false)}>取消解除</button></div>}
           <div className="question-release"><span>線上公布答案：</span><button disabled={busy || activity.revision !== selected.revision} onClick={() => onRelease(selected.questions.map((q) => q.id))}>公布全部答案</button>{selected.questions.map((q, i) => <button key={q.id} disabled={busy || activity.revision !== selected.revision || activity.released?.includes(q.id)} onClick={() => onRelease([q.id])}>{activity.released?.includes(q.id) ? `第 ${i + 1} 題已公布` : `公布第 ${i + 1} 題`}</button>)}</div>
         </>}
-        <small>成員掃活動 QR 後，須連網按「更新題目及答案」；不會自動查詢。無網時請改掃離線題目／答案 QR。公布後持有人可以保留答案。</small>
-      </div>
+        <strong>離線後備</strong>
+        <p>出發前下載固定題目 QR 和答案 QR；答案請由領袖保管。</p>
+        <div className="question-actions"><button onClick={() => onShare('questions')}><QrCode size={15}/>題目 QR／JSON</button><button onClick={() => onShare('answers')}><QrCode size={15}/>答案 QR／JSON</button></div>
+        <small>活動首次讀取及更新需連網，不會自動查詢。公布後，持有人可保留答案。</small>
+      </div>}
       {error && <p className="leader-error" role="alert">{error}</p>}
+      <h3 className="question-section-heading">本組題目及領袖答案</h3>
+      <ol className="question-summary">{selected.questions.map((q, i) => <li key={q.id}><strong>{i + 1}. {q.prompt}</strong><small>{types[q.type]}{q.reference ? ` · ${q.reference}` : ''}</small><span>領袖答案：{q.answer}</span></li>)}</ol>
+      <button className="secondary-button question-overview-open" onClick={onOverview}><MapPin size={15}/>在地圖總覽所有答案</button>
       <div className="modal-actions"><button className="secondary-button" onClick={onBack}>返回題庫</button>{!confirm ? <button className="danger-button" disabled={busy} onClick={() => setConfirm(true)}>刪除本機題組</button> : <button className="danger-button" disabled={busy} onClick={() => { setConfirm(false); onDelete(); }}>確認刪除</button>}</div>
       {confirm && <p className="question-unsynced">刪除本機題組和管理鑰匙；線上活動會在到期後失效，背景清理可能延遲，請先備份。</p>}
     </> : <>
-      <p className="modal-intro">每部領袖手機有自己的題庫。可一次分享多題，答案分開公布。</p>
+      <p className="modal-intro">{fixed ? '建立多套固定題組，每套可放多題，並各有獨立的題目及答案 QR。改題後需重新分享。' : '建立多套活動題組，每套可放多題及建立獨立活動 QR。領袖可連網改題，成員手動更新。'}</p>
       <div className="question-actions"><button className="primary-button" onClick={onCreate} disabled={busy}><Plus size={16}/>建立題組</button><button onClick={onBackup}><Download size={15}/>私人備份</button><button disabled={busy} onClick={() => input.current?.click()}><Upload size={15}/>還原備份</button></div>
       <input ref={input} type="file" accept=".json,application/json" aria-label="匯入私人題庫備份" hidden onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) onImport(file); }}/>
-      {sets.length ? <div className="question-library">{sets.map((set) => <button key={set.id} onClick={() => onSelect(set.id)}><BookOpen size={18}/><span><strong>{set.name}</strong><small>{set.questions.length} 題 · 版本 {set.revision}</small></span><span>開啟 →</span></button>)}</div> : <p className="question-empty">題庫尚未有題組，先建立第一組。</p>}
+      <h3 className="question-section-heading">已儲存的題組（{visibleSets.length}）</h3>
+      {visibleSets.length ? <div className="question-library">{visibleSets.map((set) => <button key={set.id} onClick={() => onSelect(set.id)}><BookOpen size={18}/><span><strong>{set.name}</strong><small>{set.questions.length} 題 · 版本 {set.revision}{!set.libraryType ? ' · 舊版共用' : ''}{activities[set.id] ? ' · 已連接活動' : ''}</small></span><span>開啟 →</span></button>)}</div> : <p className="question-empty">尚未有題組，按「建立題組」開始；之後可再建立其他題組。</p>}
+      {sets.some((set) => !set.libraryType) && <p className="question-legacy-note">舊版共用題組會同時出現在兩個題庫，原有 QR 和活動不會更改。可複製成獨立題組。</p>}
       {error && <p className="leader-error" role="alert">{error}</p>}
-      <p className="modal-footnote">私人備份包含未公布答案及活動管理鑰匙，只限領袖保管，不要發給成員。清除瀏覽器資料會刪除本機題庫。</p>
+      <p className="modal-footnote">兩類題庫合共最多 50 組，儲存在本裝置。私人備份包含兩類題組、未公布答案及活動管理鑰匙，只限領袖保管；清除瀏覽器資料會刪除本機題庫。</p>
+      <div className="modal-actions"><button className="secondary-button" onClick={onMenu}>返回題目選單</button></div>
     </>}
   </div>;
 }
@@ -145,14 +190,20 @@ export function QuestionShare({ mode, set, activity, onBack }) {
   }, [mode, set, activity?.id, selected]);
   const title = mode === 'questions' ? '離線題目' : mode === 'answers' ? '離線答案' : '連網活動';
   const ids = selected === 'all' ? null : [selected];
-  function downloadJson() { saveJson(mode === 'questions' ? '題目.json' : '答案.json', mode === 'questions' ? questionPacket(set) : standaloneAnswerPacket(set, ids)); }
+  const safeName = Array.from(set.name.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '-')).slice(0, 32).join('') || '題組';
+  const answerScope = mode === 'answers' && selected !== 'all' ? `-第${set.questions.findIndex((q) => q.id === selected) + 1}題` : '';
+  // The full set ID prevents two independently named sets from overwriting or
+  // being confused with one another when the leader downloads several QRs.
+  const fileBase = `山野地圖-${safeName}-${title}${answerScope}-v${set.revision}-${set.id}`;
+  function downloadJson() { saveJson(`${fileBase}.json`, mode === 'questions' ? questionPacket(set) : standaloneAnswerPacket(set, ids)); }
   async function copy() { try { await navigator.clipboard.writeText(qr.link); setMessage('連結已複製。'); } catch { setMessage('請長按下方連結複製。'); } }
   async function share() { try { if (navigator.share) await navigator.share({ title, url: qr.link }); else await copy(); } catch (error) { if (error?.name !== 'AbortError') setMessage('請改用複製或下載 QR。'); } }
   return <div className="question-share">
-    <p className="modal-intro">{mode === 'questions' ? '一個 QR 可放多題，不包含答案；修改後需重新掃。' : mode === 'answers' ? '這個 QR 包含題目和所選答案；成員可直接掃描，無須先掃題目。只有準備公布時才分享。' : '成員掃一次活動 QR；之後連網按「更新題目及答案」讀取最新內容。'}</p>
+    <p className="question-share-identity"><strong>{set.name}</strong> · 共 {set.questions.length} 題 · 版本 {set.revision}</p>
+    <p className="modal-intro">{mode === 'questions' ? '固定題目 QR 包含本組所有題目，不包含答案；修改後需重新分享。' : mode === 'answers' ? '固定答案 QR 包含本組全部題目及所選答案；成員可直接掃描，無須先掃題目。只有準備公布時才分享。' : '成員掃一次活動 QR；之後連網按「更新題目及答案」讀取最新內容。'}</p>
     {mode === 'answers' && <label>分享範圍<select aria-label="答案分享範圍" value={selected} onChange={(e) => { setQr(null); setSelected(e.target.value); }}><option value="all">全部答案</option>{set.questions.map((q, i) => <option key={q.id} value={q.id}>第 {i + 1} 題</option>)}</select></label>}
     {message && <p className="exercise-message" role="status">{message}</p>}
-    {qr && <div className="exercise-qr"><strong>{title} QR Code</strong><img src={qr.image} width="320" height="320" alt={`${title} QR Code`}/><div className="exercise-share-actions"><button onClick={share}><Share2 size={15}/>分享連結</button><button onClick={copy}><Copy size={15}/>複製</button><a href={qr.image} download={`${title}.png`}>下載 QR</a></div><details><summary>顯示分享連結</summary><textarea aria-label={`${title}分享連結`} readOnly rows={3} value={qr.link}/></details></div>}
+    {qr && <div className="exercise-qr"><strong>{title} QR Code</strong><img src={qr.image} width="320" height="320" alt={`${title} QR Code`}/><div className="exercise-share-actions"><button onClick={share}><Share2 size={15}/>分享連結</button><button onClick={copy}><Copy size={15}/>複製</button><a href={qr.image} download={`${fileBase}.png`}>下載 QR</a></div><details><summary>顯示分享連結</summary><textarea aria-label={`${title}分享連結`} readOnly rows={3} value={qr.link}/></details></div>}
     {mode !== 'activity' && <button className="secondary-button question-json" onClick={downloadJson}><Download size={15}/>下載{title} JSON</button>}
     <p className="modal-footnote">請先儲存 QR 圖片；山野離線時需已安裝及快取 App 和相關地圖。不要把答案 QR 傳給未準備對答案的人。</p>
     <div className="modal-actions"><button className="secondary-button" onClick={onBack}>返回題組</button></div>

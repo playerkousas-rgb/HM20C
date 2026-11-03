@@ -14,12 +14,12 @@ async function login(page) {
   await page.getByRole('button', { name: '解鎖領袖模式' }).click();
   await expect(page.locator('.leader-coordinate')).toBeVisible();
 }
-async function openBank(page) {
+async function openBank(page, mode = 'activity') {
   await page.getByRole('button', { name: '題目', exact: true }).click();
-  await page.getByRole('button', { name: /領袖題庫及同步活動/ }).click();
+  await page.getByRole('button', { name: mode === 'fixed' ? /固定題庫/ : /活動題庫/ }).click();
 }
-async function makeSet(page, name = '西貢雙題') {
-  await openBank(page);
+async function makeSet(page, name = '西貢雙題', mode = 'activity') {
+  await openBank(page, mode);
   await page.getByRole('button', { name: '建立題組' }).click();
   await page.getByLabel('題組名稱').fill(name);
   await page.getByLabel('第 1 題題型').selectOption('identify');
@@ -33,6 +33,20 @@ async function makeSet(page, name = '西貢雙題') {
   await page.getByRole('button', { name: '儲存題組' }).click();
   await expect(page.getByRole('dialog')).toContainText(name);
 }
+async function createFreeSetInOpenBank(page, name, prefix, count = 3) {
+  await page.getByRole('button', { name: '建立題組' }).click();
+  await page.getByLabel('題組名稱').fill(name);
+  await expect(page.getByRole('button', { name: '新增一題', exact: true })).toBeInViewport();
+  for (let i = 1; i <= count; i += 1) {
+    if (i > 1) await page.getByRole('button', { name: '新增一題', exact: true }).click();
+    await page.getByLabel(`第 ${i} 題題型`).selectOption('free');
+    await page.getByLabel(`第 ${i} 題題目`).fill(`${prefix}第 ${i} 題？`);
+    await page.getByLabel(`第 ${i} 題答案`).fill(`${prefix}秘密答案 ${i}`);
+  }
+  await expect(page.locator('.question-editor-toolbar')).toContainText(`${count} / 15 題`);
+  await page.getByRole('button', { name: '儲存題組' }).click();
+  await expect(page.getByRole('dialog')).toContainText(name);
+}
 async function currentQr(page, label) {
   await expect(page.getByAltText(`${label} QR Code`)).toBeVisible();
   return await page.getByAltText(`${label} QR Code`).getAttribute('src');
@@ -43,7 +57,7 @@ async function uploadQr(page, dataUrl) {
 
 test('leader saves two questions; separate offline QR packets do not contain or reveal answers prematurely', async ({ browser }) => {
   const leaderContext = await browser.newContext({ viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true });
-  const leader = await leaderContext.newPage(); await mockMaps(leader); await leader.goto('/'); await login(leader); await makeSet(leader);
+  const leader = await leaderContext.newPage(); await mockMaps(leader); await leader.goto('/'); await login(leader); await makeSet(leader, '西貢雙題', 'fixed');
   await leader.getByRole('button', { name: '題目 QR／JSON' }).click();
   const questionQr = await currentQr(leader, '離線題目');
   const questionLink = await leader.getByLabel('離線題目分享連結').inputValue();
@@ -151,7 +165,7 @@ test('A and B leaders independently create stable practice QR codes and members 
   }
   async function createGroup(name) {
     const page = await phone(); await page.goto('/'); await login(page); await makeSet(page, name);
-    await expect(page.getByLabel('練習到期時間')).toBeVisible();
+    await expect(page.getByLabel('活動到期時間')).toBeVisible();
     await page.getByRole('button', { name: '建立連網活動' }).click();
     await expect(page.getByRole('button', { name: '活動 QR' })).toBeVisible();
     await page.getByRole('button', { name: '活動 QR' }).click();
@@ -167,7 +181,7 @@ test('A and B leaders independently create stable practice QR codes and members 
   await expect(memberA.getByRole('dialog')).toContainText('A 團題組');
   await expect(memberB.getByRole('dialog')).toContainText('B 團題組');
 
-  await a.page.getByRole('button', { name: '延長練習期限' }).click();
+  await a.page.getByRole('button', { name: '延長活動期限' }).click();
   await expect(a.page.getByRole('dialog')).toContainText('活動版本 2');
   await a.page.getByRole('button', { name: '活動 QR' }).click();
   expect(await a.page.getByLabel('連網活動分享連結').inputValue()).toBe(a.link);
@@ -200,7 +214,7 @@ test('one leader can copy a set and create a second independent activity on the 
 });
 
 test('switching to another offline set asks before replacing the member copy', async ({ browser }) => {
-  const leader = await browser.newPage(); await mockMaps(leader); await leader.goto('/'); await login(leader); await makeSet(leader);
+  const leader = await browser.newPage(); await mockMaps(leader); await leader.goto('/'); await login(leader); await makeSet(leader, '西貢雙題', 'fixed');
   await leader.getByRole('button', { name: '題目 QR／JSON' }).click(); await currentQr(leader, '離線題目');
   const first = await leader.getByLabel('離線題目分享連結').inputValue();
   await leader.getByRole('button', { name: '返回題組' }).click();
@@ -218,13 +232,8 @@ test('switching to another offline set asks before replacing the member copy', a
   await member.close(); await leader.close();
 });
 
-test('marking a question on a rotated mobile map returns the chosen coordinate to the editor', async ({ page }) => {
-  await mockMaps(page); await page.goto('/'); await login(page);
-  await page.getByRole('button', { name: '題目', exact: true }).click();
-  await page.getByRole('button', { name: /領袖設題及分享/ }).click();
-  await page.getByLabel('題目名稱').fill('原來的單題草稿');
-  await page.getByRole('button', { name: '關閉' }).click();
-  await openBank(page);
+test('marking a fixed-bank draft on the mobile map preserves the multi-question editor and category', async ({ page }) => {
+  await mockMaps(page); await page.goto('/'); await login(page); await openBank(page, 'fixed');
   await page.getByRole('button', { name: '建立題組' }).click();
   await page.getByLabel('題組名稱').fill('地圖選點');
   await page.getByRole('button', { name: '在地圖選點' }).click();
@@ -237,12 +246,12 @@ test('marking a question on a rotated mobile map returns the chosen coordinate t
   await expect(page.getByLabel('題目地標標記')).toContainText('領袖答案：50Q');
   await page.getByRole('button', { name: '完成選點' }).click();
   await expect(page.getByText(/領袖答案：50Q/)).toBeVisible();
+  await expect(page.getByRole('button', { name: '新增一題' })).toBeVisible();
   await page.getByRole('button', { name: '儲存題組' }).click();
+  await expect(page.getByRole('dialog')).toHaveAccessibleName('固定題庫');
   await expect(page.getByRole('dialog')).toContainText('地圖選點');
-  await page.getByRole('button', { name: '關閉' }).click();
-  await page.getByRole('button', { name: '題目', exact: true }).click();
-  await page.getByRole('button', { name: /領袖設題及分享/ }).click();
-  await expect(page.getByLabel('題目名稱')).toHaveValue('原來的單題草稿');
+  await page.getByRole('button', { name: '返回題庫' }).click();
+  await expect(page.getByRole('button', { name: /地圖選點/ })).toBeVisible();
 });
 
 test('a private backup restores a leader’s activity management on another phone', async ({ browser }) => {
@@ -456,7 +465,7 @@ test('oversized self-contained QR fails clearly while JSON remains available', a
   await page.goto('/'); await login(page); await openBank(page);
   await page.getByRole('button', {name:/超長題組/}).click();
   await page.getByRole('button', {name:'答案 QR／JSON'}).click();
-  await expect(page.getByRole('status')).toContainText('QR 太密或資料過長');
+  await expect(page.getByRole('dialog').getByRole('status')).toContainText('QR 太密或資料過長');
   await expect(page.getByAltText('離線答案 QR Code')).toHaveCount(0);
   const event = page.waitForEvent('download');
   await page.getByRole('button',{name:'下載離線答案 JSON'}).click();
@@ -477,4 +486,187 @@ test('a revoked leader session locks only after a rejected online write and pres
   await page.getByRole('button', { name: '關閉' }).click();
   await login(page); await openBank(page);
   await expect(page.getByRole('dialog')).toContainText('西貢雙題');
+});
+
+test('two fixed sets each contain multiple questions, retain separate downloadable QR pairs, and can be read independently', async ({ browser }) => {
+  test.setTimeout(100_000);
+  const leaderContext = await browser.newContext({ viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true });
+  const leader = await leaderContext.newPage(); await mockMaps(leader); await leader.goto('/'); await login(leader);
+  const activityRequests = [];
+  leader.on('request', (request) => { if (new URL(request.url()).pathname === '/api/activity') activityRequests.push(request.method()); });
+  await openBank(leader, 'fixed');
+  await expect(leader.getByRole('dialog')).toHaveAccessibleName('固定題庫');
+
+  async function captureSet(name, prefix) {
+    await createFreeSetInOpenBank(leader, name, prefix, 3);
+    await expect(leader.getByRole('button', { name: '建立連網活動' })).toHaveCount(0);
+    await leader.getByRole('button', { name: '題目 QR／JSON' }).click();
+    const questionQr = await currentQr(leader, '離線題目');
+    const questionLink = await leader.getByLabel('離線題目分享連結').inputValue();
+    const questionFile = await leader.getByRole('link', { name: '下載 QR' }).getAttribute('download');
+    const questionPacket = decodeShared(questionLink);
+    expect(questionPacket.set.name).toBe(name); expect(questionPacket.set.questions).toHaveLength(3);
+    expect(JSON.stringify(questionPacket)).not.toContain('秘密答案');
+    await leader.getByRole('button', { name: '返回題組' }).click();
+    await leader.getByRole('button', { name: '答案 QR／JSON' }).click();
+    const answerQr = await currentQr(leader, '離線答案');
+    const answerLink = await leader.getByLabel('離線答案分享連結').inputValue();
+    const answerFile = await leader.getByRole('link', { name: '下載 QR' }).getAttribute('download');
+    const answerPacket = decodeShared(answerLink);
+    expect(answerPacket.set.id).toBe(questionPacket.set.id); expect(answerPacket.answers).toHaveLength(3);
+    expect(questionFile).toContain(questionPacket.set.id); expect(answerFile).toContain(questionPacket.set.id);
+    expect(questionFile).not.toBe(answerFile);
+    await leader.getByRole('button', { name: '返回題組' }).click();
+    await leader.getByRole('button', { name: '返回題庫' }).click();
+    return { questionQr, questionLink, questionFile, answerQr, answerFile, id: questionPacket.set.id };
+  }
+  const first = await captureSet('A 固定題組', 'A ');
+  const second = await captureSet('B 固定題組', 'B ');
+  expect(first.id).not.toBe(second.id); expect(first.questionLink).not.toBe(second.questionLink);
+  expect(first.questionFile).not.toBe(second.questionFile); expect(first.answerFile).not.toBe(second.answerFile);
+  await expect(leader.getByRole('button', { name: /A 固定題組/ })).toBeVisible();
+  await expect(leader.getByRole('button', { name: /B 固定題組/ })).toBeVisible();
+  expect(activityRequests).toEqual([]);
+
+  await leader.reload(); await login(leader); await openBank(leader, 'fixed');
+  await expect(leader.getByRole('button', { name: /A 固定題組/ })).toBeVisible();
+  await expect(leader.getByRole('button', { name: /B 固定題組/ })).toBeVisible();
+  await leader.getByRole('button', { name: /A 固定題組/ }).click();
+  await leader.getByRole('button', { name: '修改題目' }).click();
+  await leader.getByLabel('第 1 題題目').fill('A 修改後的第 1 題？');
+  await leader.getByRole('button', { name: '儲存題組' }).click();
+  await leader.getByRole('button', { name: '題目 QR／JSON' }).click();
+  await currentQr(leader, '離線題目');
+  expect(await leader.getByLabel('離線題目分享連結').inputValue()).not.toBe(first.questionLink);
+  await leader.getByRole('button', { name: '返回題組' }).click();
+  await leader.getByRole('button', { name: '返回題庫' }).click();
+  await leader.getByRole('button', { name: /B 固定題組/ }).click();
+  await leader.getByRole('button', { name: '題目 QR／JSON' }).click();
+  await currentQr(leader, '離線題目');
+  expect(await leader.getByLabel('離線題目分享連結').inputValue()).toBe(second.questionLink);
+  expect(activityRequests).toEqual([]);
+
+  const memberContext = await browser.newContext({ viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true });
+  const member = await memberContext.newPage(); await mockMaps(member); await member.goto('/');
+  await member.getByRole('button', { name: '題目', exact: true }).click();
+  await member.getByRole('button', { name: /讀取題目 QR Code/ }).click();
+  await uploadQr(member, first.questionQr);
+  await expect(member.getByRole('dialog')).toContainText('A 固定題組');
+  await expect(member.getByText('答案尚未公布')).toHaveCount(3);
+  await expect(member.getByRole('dialog')).not.toContainText('秘密答案');
+  member.once('dialog', (dialog) => dialog.accept());
+  await member.getByRole('button', { name: '讀取題目／答案' }).click(); await uploadQr(member, second.questionQr);
+  await expect(member.getByRole('dialog')).toContainText('B 固定題組');
+  await expect(member.getByRole('dialog')).not.toContainText('A 第 1 題');
+  // A fresh browser context confirms the answer QR works without a prior question scan.
+  const answerContext = await browser.newContext({ viewport: { width: 393, height: 852 }, isMobile: true });
+  const answerPhone = await answerContext.newPage(); await mockMaps(answerPhone); await answerPhone.goto('/');
+  await answerPhone.getByRole('button', { name: '題目', exact: true }).click();
+  await answerPhone.getByRole('button', { name: /讀取題目 QR Code/ }).click(); await uploadQr(answerPhone, second.answerQr);
+  await expect(answerPhone.getByRole('dialog')).toContainText('B 固定題組');
+  await expect(answerPhone.getByRole('dialog')).toContainText('B 秘密答案 3');
+  await Promise.all([leaderContext.close(), memberContext.close(), answerContext.close()]);
+});
+
+test('legacy shared activity keeps its QR, prevents fixed-mode edits from syncing, and can gain more questions', async ({ browser }) => {
+  test.setTimeout(90_000);
+  const context = await browser.newContext({ viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true });
+  const page = await context.newPage(); await mockMaps(page); await page.goto('/'); await login(page); await makeSet(page, '舊活動題組');
+  await page.getByRole('button', { name: '建立連網活動' }).click();
+  await page.getByRole('button', { name: '活動 QR' }).click();
+  const originalLink = await page.getByLabel('連網活動分享連結').inputValue();
+  const id = decodeShared(originalLink).id;
+  const initial = await page.evaluate(async (activityId) => (await fetch(`/api/activity?id=${activityId}`)).json(), id);
+  await page.evaluate(() => {
+    const key = 'scout-trail-map.question-bank.v1'; const bank = JSON.parse(localStorage.getItem(key));
+    delete bank[0].libraryType; localStorage.setItem(key, JSON.stringify(bank));
+  });
+  await page.reload(); await login(page); await openBank(page, 'activity');
+  await expect(page.getByRole('button', { name: /舊活動題組.*舊版共用.*已連接活動/ })).toBeVisible();
+  await page.getByRole('button', { name: /舊活動題組/ }).click();
+  await page.getByRole('button', { name: '活動 QR' }).click();
+  expect(await page.getByLabel('連網活動分享連結').inputValue()).toBe(originalLink);
+  await page.getByRole('button', { name: '返回題組' }).click();
+  await page.getByRole('button', { name: '返回題庫' }).click();
+  await page.getByRole('button', { name: '返回題目選單' }).click();
+  await page.getByRole('button', { name: /固定題庫/ }).click();
+  await page.getByRole('button', { name: /舊活動題組/ }).click();
+  await expect(page.getByRole('dialog')).toContainText('已連接活動');
+  await expect(page.getByRole('button', { name: '修改題目' })).toBeDisabled();
+  const writes = [];
+  page.on('request', (request) => { if (new URL(request.url()).pathname === '/api/activity' && request.method() !== 'GET') writes.push(request.method()); });
+  await page.getByRole('button', { name: '複製題組' }).click();
+  await expect(page.getByRole('dialog')).toContainText('舊活動題組（副本）');
+  await page.getByRole('button', { name: '修改題目' }).click();
+  await page.getByLabel('第 1 題題目').fill('固定副本的題目');
+  await page.getByRole('button', { name: '儲存題組' }).click();
+  expect(writes).toEqual([]);
+  const afterCopy = await page.evaluate(async (activityId) => (await fetch(`/api/activity?id=${activityId}`)).json(), id);
+  expect(afterCopy).toEqual(initial);
+  await page.getByRole('button', { name: '返回題庫' }).click();
+  await page.getByRole('button', { name: '返回題目選單' }).click();
+  await page.getByRole('button', { name: /活動題庫/ }).click();
+  await page.getByRole('button', { name: /舊活動題組/ }).click();
+  await page.getByRole('button', { name: '修改題目' }).click();
+  await page.getByRole('button', { name: '新增一題', exact: true }).click();
+  await page.getByLabel('第 3 題題型').selectOption('free');
+  await page.getByLabel('第 3 題題目').fill('新增活動第三題');
+  await page.getByLabel('第 3 題答案').fill('第三題私人答案');
+  await page.getByRole('button', { name: '儲存題組' }).click();
+  await expect(page.getByRole('dialog')).toContainText('線上題組版本 2');
+  await page.getByRole('button', { name: '活動 QR' }).click();
+  expect(await page.getByLabel('連網活動分享連結').inputValue()).toBe(originalLink);
+  const memberContext = await browser.newContext({ viewport: { width: 393, height: 852 }, isMobile: true });
+  const member = await memberContext.newPage(); await mockMaps(member); await member.goto(originalLink);
+  await expect(member.getByRole('dialog')).toContainText('新增活動第三題');
+  await expect(member.getByRole('dialog')).not.toContainText('第三題私人答案');
+  await Promise.all([context.close(), memberContext.close()]);
+});
+
+test('one private backup restores both categorized libraries and the original activity QR', async ({ browser }) => {
+  test.setTimeout(90_000);
+  const first = await browser.newContext({ viewport: { width: 393, height: 852 }, isMobile: true });
+  const leader = await first.newPage(); await mockMaps(leader); await leader.goto('/'); await login(leader); await openBank(leader, 'activity');
+  await createFreeSetInOpenBank(leader, '活動專用', '活動 ', 2);
+  await leader.getByRole('button', { name: '建立連網活動' }).click();
+  await leader.getByRole('button', { name: '活動 QR' }).click();
+  const link = await leader.getByLabel('連網活動分享連結').inputValue();
+  await leader.getByRole('button', { name: '返回題組' }).click();
+  await leader.getByRole('button', { name: '返回題庫' }).click();
+  await leader.getByRole('button', { name: '返回題目選單' }).click();
+  await leader.getByRole('button', { name: /固定題庫/ }).click();
+  await createFreeSetInOpenBank(leader, '固定專用', '固定 ', 2);
+  await leader.getByRole('button', { name: '返回題庫' }).click();
+  await expect(leader.getByRole('button', { name: /活動專用/ })).toHaveCount(0);
+  const downloadPromise = leader.waitForEvent('download');
+  await leader.getByRole('button', { name: '私人備份' }).click();
+  const backupPath = await (await downloadPromise).path();
+
+  const second = await browser.newContext({ viewport: { width: 393, height: 852 }, isMobile: true });
+  const restored = await second.newPage(); await mockMaps(restored); await restored.goto('/'); await login(restored); await openBank(restored, 'fixed');
+  await restored.getByLabel('匯入私人題庫備份').setInputFiles(backupPath);
+  await expect(restored.getByRole('button', { name: /固定專用/ })).toBeVisible();
+  await expect(restored.getByRole('button', { name: /活動專用/ })).toHaveCount(0);
+  await restored.getByRole('button', { name: '返回題目選單' }).click();
+  await restored.getByRole('button', { name: /活動題庫/ }).click();
+  await expect(restored.getByRole('button', { name: /活動專用/ })).toBeVisible();
+  await expect(restored.getByRole('button', { name: /固定專用/ })).toHaveCount(0);
+  await restored.getByRole('button', { name: /活動專用/ }).click();
+  await restored.getByRole('button', { name: '活動 QR' }).click();
+  expect(await restored.getByLabel('連網活動分享連結').inputValue()).toBe(link);
+  await Promise.all([first.close(), second.close()]);
+});
+
+test('the multi-question editor shows and enforces the 15-question limit', async ({ page }) => {
+  test.setTimeout(60_000);
+  await mockMaps(page); await page.goto('/'); await login(page); await openBank(page, 'fixed');
+  await page.getByRole('button', { name: '建立題組' }).click();
+  for (let next = 2; next <= 15; next += 1) {
+    await page.getByRole('button', { name: `新增下一題（第 ${next} 題）` }).click();
+    await expect(page.getByLabel(`第 ${next} 題題型`)).toBeVisible();
+  }
+  await expect(page.locator('.question-editor-card')).toHaveCount(15);
+  await expect(page.getByRole('button', { name: '新增一題', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /新增下一題/ })).toHaveCount(0);
+  await expect(page.locator('.question-editor-toolbar')).toContainText('15 / 15 題');
 });

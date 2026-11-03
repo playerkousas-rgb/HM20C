@@ -1,9 +1,8 @@
 import QRCode from 'qrcode';
-import { deflate } from 'pako';
+import { deflate, inflate } from 'pako';
 import { describe, expect, it } from 'vitest';
-import QRCode from 'qrcode';
 import { answerPacket, publicQuestionSet, validateAnswerPacket, validateQuestionSet } from '../shared/question-set.js';
-import { answerShare, decodeShared, questionAsExercise, questionShare, standaloneAnswerPacket } from '../src/lib/questionSet.js';
+import { BANK_KEY, answerShare, decodeShared, questionAsExercise, questionPacket, questionShare, readBank, standaloneAnswerPacket, validateBankSet } from '../src/lib/questionSet.js';
 import { bearingAnswerMode, calculatedBearingAnswer, leaderAnswer, questionOverviewItems } from '../src/lib/questionOverview.js';
 import { mergeSnapshot } from '../src/hooks/useQuestionSets.js';
 const set = { id: '0123456789abcdef', name: '測試套題', revision: 4, questions: [
@@ -100,4 +99,38 @@ it('uses a compact scannable answer QR for a realistic multi-question set withou
   expect(QRCode.create(url, {errorCorrectionLevel:'M'}).version).toBeLessThanOrEqual(17);
   expect(decodeShared(url).set.questions[2].points).toEqual(questions[2].points);
   expect(() => decodeShared('#answers=Z0123Z')).toThrow();
+});
+
+it('preserves private library categories and old unclassified sets without exposing them in shares', () => {
+  const fixed = { ...set, libraryType: 'fixed' };
+  const activity = { ...set, id: 'abcdefabcdefabcd', libraryType: 'activity' };
+  const legacy = { ...set, id: 'fedcbafedcbafedc' };
+  localStorage.setItem(BANK_KEY, JSON.stringify([fixed, activity, legacy]));
+  const bank = readBank();
+  expect(bank.map((item) => item.libraryType)).toEqual(['fixed', 'activity', undefined]);
+  expect(validateBankSet({ ...fixed, libraryType: 'other' })).toBeNull();
+  expect(questionPacket(fixed).set).not.toHaveProperty('libraryType');
+  expect(decodeShared(questionShare(fixed)).set).not.toHaveProperty('libraryType');
+  expect(decodeShared(answerShare(fixed, null)).set).not.toHaveProperty('libraryType');
+  expect(JSON.stringify(decodeShared(questionShare(fixed)))).not.toContain('秘密');
+  localStorage.removeItem(BANK_KEY);
+});
+
+it('makes a compact v1 question QR readable by the existing v1.2 envelope decoder', () => {
+  const ids = ['4ac86021358447da8fbf513ae67ba321', '1292cb78a510422e90e5502338fc1911', 'f8e7fcf2249b485bb503c4a995b51299', 'fe36217083f646be97565b26711487ee'];
+  const sample = { id: '2e18671b26474778ba9f452f9d24c941', name: '西貢讀圖', revision: 1, libraryType: 'fixed', questions: ids.map((id, i) => ({
+    id, type: 'grid', prompt: '圖上標記的八位座標是甚麼？', reference: '',
+    points: [{ lat: 22.382491735 + i * .001, lon: 114.321929117 + i * .001 }], answer: `秘密${i}`,
+  })) };
+  const link = questionShare(sample, 'https://hm20c.vercel.app/');
+  expect(QRCode.create(link, { errorCorrectionLevel: 'M' }).version).toBeLessThanOrEqual(17);
+  const encoded = new URL(link).hash.slice('#questions=Z'.length);
+  // Independent implementation of the base32 + inflate envelope supported by
+  // the previously deployed v1.2 decoder. The JSON format stays v1.
+  const alphabet = '0123456789ABCDEFGHIJKLMNOPQRSTUV'; let value = 0; let bits = 0; const bytes = [];
+  for (const char of encoded) { value = (value << 5) | alphabet.indexOf(char); bits += 5; if (bits >= 8) { bits -= 8; bytes.push((value >>> bits) & 255); } }
+  expect(JSON.parse(new TextDecoder().decode(inflate(Uint8Array.from(bytes))))).toEqual(questionPacket(sample));
+  expect(decodeShared(link).set.questions).toHaveLength(4);
+  const old = `https://hm20c.vercel.app/#questions=z${Buffer.from(deflate(new TextEncoder().encode(JSON.stringify(questionPacket(sample))))).toString('base64url')}`;
+  expect(decodeShared(old).set).toEqual(decodeShared(link).set);
 });

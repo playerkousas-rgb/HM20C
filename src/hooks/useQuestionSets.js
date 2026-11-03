@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { ACTIVITY_KEY, BANK_KEY, MEMBER_KEY, loadActivities, loadBank, loadMember, newId, newQuestionSet, readActivities, readBank, saveJson, validateQuestionSet } from '../lib/questionSet';
+import { ACTIVITY_KEY, BANK_KEY, LIBRARY_TYPES, MEMBER_KEY, loadActivities, loadBank, loadMember, newId, newQuestionSet, readActivities, readBank, saveJson, validateBankSet } from '../lib/questionSet';
 import { createActivity, getActivity, stopActivity, updateActivity } from '../lib/activityClient';
 import { createBankBackup, mergeBackupActivities, validateBankBackup } from '../lib/bankBackup';
 
@@ -27,6 +27,7 @@ export function useQuestionSets({ leaderActive, token, open, notify, onUnauthori
   const [activities, setActivities] = useState(loadActivities);
   const [selectedId, setSelectedId] = useState(null);
   const [draft, setDraft] = useState(null);
+  const [draftMode, setDraftMode] = useState(null);
   const [hasDraft, setHasDraft] = useState(false);
   const [shareMode, setShareMode] = useState(null);
   const [member, setMember] = useState(loadMember);
@@ -90,12 +91,31 @@ export function useQuestionSets({ leaderActive, token, open, notify, onUnauthori
     memberRef.current = next; setMember(next);
     if (!safeStore(MEMBER_KEY, next)) notify('題組已讀取，但手機未能儲存離線副本。');
   }
-  function create() { if (hasDraft && !window.confirm('目前有未儲存草稿，建立新題組會放棄草稿。繼續？')) return; setDraft(newQuestionSet()); setHasDraft(true); setError(''); open('question-edit'); }
-  function edit() { if (!selected) return; if (hasDraft && draft?.id === selected.id) { open('question-edit'); return; } if (hasDraft && !window.confirm('目前有未儲存草稿，切換題組會放棄草稿。繼續？')) return; setDraft(structuredClone(selected)); setHasDraft(true); setError(''); open('question-edit'); }
+  function create(mode) {
+    if (!LIBRARY_TYPES.includes(mode)) return;
+    if (hasDraft && !window.confirm('目前有未儲存草稿，建立新題組會放棄草稿。繼續？')) return;
+    setDraft(newQuestionSet(mode)); setDraftMode(mode); setHasDraft(true); setError(''); open('question-edit');
+  }
+  function edit(mode) {
+    if (!selected || !LIBRARY_TYPES.includes(mode)) return null;
+    if (hasDraft && draft?.id === selected.id) { open('question-edit'); return draftMode || mode; }
+    if (hasDraft && !window.confirm('目前有未儲存草稿，切換題組會放棄草稿。繼續？')) return null;
+    setDraft(structuredClone(selected)); setDraftMode(mode); setHasDraft(true); setError(''); open('question-edit'); return mode;
+  }
   function select(id) { setSelectedId(id); setError(''); }
-  async function save(set) {
+  async function save(set, mode) {
     if (!leaderActive) { notify('請先解鎖領袖模式。'); return; }
     if (busy) { notify('活動更新中，請稍候再儲存。'); return; }
+    // An older app can have linked an activity to a now-classified fixed set.
+    // Keep managing that activity in its own view rather than hiding it.
+    if (!LIBRARY_TYPES.includes(mode) || (set.libraryType && set.libraryType !== mode && !(mode === 'activity' && activities[set.id]))) { notify('題庫類型不一致；草稿仍在本頁。'); return; }
+    if (mode === 'fixed') {
+      const latestActivities = readActivities();
+      if (!latestActivities) { notify('本機活動資料不能讀取；未儲存，請先備份。'); return; }
+      if (activities[set.id] || latestActivities[set.id]) {
+        notify('此舊題組已連接活動。請先複製為固定題組，避免修改時更新活動。'); return;
+      }
+    }
     const original = bank.find((item) => item.id === set.id);
     const latest = readBank();
     if (!latest) { setError('本機題庫損壞或不能讀取；未覆蓋原有資料。'); notify('本機題庫未能讀取，未覆蓋；草稿仍在本頁。'); return; }
@@ -104,7 +124,7 @@ export function useQuestionSets({ leaderActive, token, open, notify, onUnauthori
       setError('另一分頁已修改同一題組；未覆蓋，請先核對及備份。');
       notify('另一分頁已修改同一題組；草稿仍在本頁。'); return;
     }
-    const nextSet = validateQuestionSet({ ...set, revision: original ? original.revision + 1 : 1 }, { privateAnswers: true });
+    const nextSet = validateBankSet({ ...set, revision: original ? original.revision + 1 : 1 });
     if (!nextSet) { setError('題組資料無效。'); return; }
     const nextBank = original ? latest.map((item) => item.id === set.id ? nextSet : item) : [...latest, nextSet];
     if (nextBank.length > 50 || !safeStore(BANK_KEY, nextBank)) { setError('未能儲存題庫；請檢查手機儲存空間。'); notify('未能儲存題庫；草稿仍在本頁。'); return; }
@@ -124,18 +144,19 @@ export function useQuestionSets({ leaderActive, token, open, notify, onUnauthori
       finally { setBusy(false); }
     } else notify(record ? '題組已存在本機；連網後請更新活動。' : '題組已儲存在本機。');
   }
-  function duplicate() {
-    if (!selected || !leaderActive || busy) return;
+  function duplicate(mode) {
+    if (!selected || !leaderActive || busy || !LIBRARY_TYPES.includes(mode)) return false;
     const latest = readBank();
-    if (!latest) { setError('本機題庫損壞或不能讀取；未複製。'); return; }
-    if (JSON.stringify(latest.find((set) => set.id === selected.id) || null) !== JSON.stringify(selected)) { setError('另一分頁已修改此題組；請先核對。'); return; }
-    if (latest.length >= 50) { setError('題庫最多 50 組，請先清理不需要的題組。'); return; }
+    if (!latest) { setError('本機題庫損壞或不能讀取；未複製。'); return false; }
+    if (JSON.stringify(latest.find((set) => set.id === selected.id) || null) !== JSON.stringify(selected)) { setError('另一分頁已修改此題組；請先核對。'); return false; }
+    if (latest.length >= 50) { setError('題庫最多 50 組，請先清理不需要的題組。'); return false; }
     const prefix = Array.from(selected.name).reduce((text, character) => text.length + character.length <= 44 ? text + character : text, '');
-    const copy = validateQuestionSet({ ...selected, id: newId(), name: `${prefix}（副本）`, revision: 1,
-      questions: selected.questions.map((question) => ({ ...question, id: newId() })) }, { privateAnswers: true });
-    if (!copy || !safeStore(BANK_KEY, [...latest, copy])) { setError('未能複製題組；請檢查手機儲存空間。'); return; }
+    const copy = validateBankSet({ ...selected, id: newId(), name: `${prefix}（副本）`, revision: 1, libraryType: mode,
+      questions: selected.questions.map((question) => ({ ...question, id: newId() })) });
+    if (!copy || !safeStore(BANK_KEY, [...latest, copy])) { setError('未能複製題組；請檢查手機儲存空間。'); return false; }
     setBank([...latest, copy]); setSelectedId(copy.id); setError('');
-    notify('已複製題組；副本沒有活動，可另建獨立 QR。');
+    notify(`已複製到${mode === 'fixed' ? '固定題庫' : '活動題庫'}；副本與原題組互不影響。`);
+    return true;
   }
   function remove() {
     if (!selected) return;
@@ -212,7 +233,7 @@ export function useQuestionSets({ leaderActive, token, open, notify, onUnauthori
       if (file.size > 2 * 1024 * 1024) throw new Error('備份檔超過 2 MB。');
       const raw = await validateBankBackup(JSON.parse(await file.text()));
       if (raw.sets.length > 50) throw new Error('備份題組數量過多。');
-      const sets = raw.sets.map((set) => validateQuestionSet(set, { privateAnswers: true }));
+      const sets = raw.sets.map(validateBankSet);
       if (sets.some((set) => !set) || new Set(sets.map((set) => set.id)).size !== sets.length) throw new Error('備份題目無效。');
       const latestBank = readBank();
       const latestActivities = readActivities();
@@ -286,7 +307,7 @@ export function useQuestionSets({ leaderActive, token, open, notify, onUnauthori
       saveMember({ ...previous, answers: [...answers.values()] }); open('question-member');
     }
   }
-  return { bank, activities, selected, activity, draft, setDraft, hasDraft, resumeDraft: () => open('question-edit'), shareMode, member, status, busy, memberBusy, error,
+  return { bank, activities, selected, activity, draft, setDraft, draftMode, hasDraft, resumeDraft: () => open('question-edit'), shareMode, member, status, busy, memberBusy, error,
     create, edit, select, save, duplicate, remove, share, createOnline, sync: () => update('sync', { set: selected }),
     release: (questionIds) => update('release', { questionIds, set: selected }), extend: (expiresAt) => update('extend', { expiresAt }),
     refresh, refreshMember, stopOnline, unlinkOnline, backup, importBackup, receive };

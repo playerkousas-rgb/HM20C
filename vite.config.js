@@ -69,13 +69,17 @@ function localLeaderApi() {
 // entry-gate 白名單（docs/50 SG5）會攔直接開網址，包括 e2e／本機預覽。
 // 只喺 Vite dev／preview server 注入一行「本機測試通行證」（sessionStorage，
 // entry-gate 自己嘅機制），等同「呢個分頁已經由指定入口撳入過」。
+// ⚠️ 一定要注入喺閘門 script **之前**：閘門喺 <head> 即時執行，遲一行就照樣被攔。
 // 生產 build 唔會注入（apply: 'serve'），瀏覽器行為不變。
+const STORE_GATE_TAG = '<script src="/store_gate_v1.0.js"></script>';
+const LOCAL_STORE_PASS = '<script>try { sessionStorage.setItem("hm20c.store_pass", "1"); } catch {}</script>\n    ';
 function localStorePass() {
   return {
     name: 'local-store-pass',
     apply: 'serve',
     transformIndexHtml(html) {
-      return html.replace('<body>', `<body>\n    <script>try { sessionStorage.setItem('hm20c.store_pass', '1'); } catch {}</script>`);
+      if (!html.includes(STORE_GATE_TAG)) return html;   // 冇閘門就無需通行證
+      return html.replace(STORE_GATE_TAG, LOCAL_STORE_PASS + STORE_GATE_TAG);
     },
   };
 }

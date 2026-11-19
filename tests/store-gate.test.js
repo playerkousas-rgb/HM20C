@@ -185,7 +185,9 @@ describe('dev/preview only test pass', () => {
   it('injects the pass in Vite serve mode only, never into the production build', () => {
     const vite = readFileSync(path.join(process.cwd(), 'vite.config.js'), 'utf8');
     expect(vite).toContain("apply: 'serve'");
-    expect(vite).toContain("sessionStorage.setItem('hm20c.store_pass', '1')");
+    expect(vite).toContain('hm20c.store_pass');
+    // 通行證一定要喺閘門 script 之前注入，否則閘門喺 <head> 已經攔咗
+    expect(vite).toContain('LOCAL_STORE_PASS + STORE_GATE_TAG');
     const dist = path.join(process.cwd(), 'dist/index.html');
     if (existsSync(dist)) {
       const built = readFileSync(dist, 'utf8');

@@ -24,7 +24,7 @@ PR #5 的 GitHub 檢查曾通過，但合併後 main 的一次檢查在題目方
 ## v1.3.0 白名單與 SG18（2026-11-19 本機檢查）
 
 - 閘門檔 `public/store_gate_v1.0.js` 由共通 readme **原封不動**抄入（sha256 `45de189d68e9fbf64d560a4306987d1a03cd03f03e56dd24222a4343011e3d5b`），冇改邏輯。
-- 版本化入口 `index_v1.3.0.html` 在 `<meta charset="UTF-8">` 之後、`<meta name="viewport">` 之前掛入 `initStoreGate({ appKey: 'hm20c', mode: 'entry-gate', portalIds: ['appstore'], silentPortalIds: ['library'], allowedOrigins: ['https://github.com'], allowStandalone: true, autoRedirectSeconds: 0 })`；`index.html` 由 `npm run sync:index` 產生。GitHub 用文件支援的額外來源放行（未上架前由 repo 頁撳入都入得），只放行、唔畫成掣；直打網址仍然見攔截卡。
+- 版本化入口 `index_v1.3.0.html` 在 `<meta charset="UTF-8">` 之後、`<meta name="viewport">` 之前掛入 `initStoreGate({ appKey: 'hm20c', mode: 'entry-gate', portalIds: ['appstore'], silentPortalIds: ['library'], allowedOrigins: ['https://github.com'], allowStandalone: true, autoRedirectSeconds: 0 })`；`index.html` 由 `npm run sync:index` 產生。GitHub 用文件支援的額外來源放行（註解已寫明：GitHub 對外連結 `rel="noopener noreferrer"`＋`Referrer-Policy: no-referrer-when-downgrade`，實際唔會送 Referer，所以呢行只屬保底，唔係入口）；直打網址仍然見攔截卡，未上架前自助＝撳入後「加入主畫面」。
 - SG18 掣：`src/components/StoreSupportLink.jsx`（網址只由 `ScoutStoreGate.getAppStoreUrl('hm20c')` 組出，未載入即 `hidden`）＋ `src/App.jsx` 頂欄；CSS `src/styles.css` 有 `.support-btn[hidden] { display: none }`、40px 觸控高度、`@media print` 隱藏。
 - 自動檢查（本機，2026-11-19）：`npm run guard` 17 項全綠、`npm test` 102 項全綠（含新增 `tests/store-gate.test.js` 15 項白名單／GitHub 放行／SG18 模擬）、`npm run build` 成功（`dist` 2.9 MB < 5MB，`dist/store_gate_v1.0.js` 已在輸出）。**未跑**：Playwright 瀏覽器 e2e／離線 e2e（本機下載 Chromium 失敗，需網絡）及 `npm audit`（需網絡）。
 - **仍然未做**：真機實測（APP STORE 入／圖書館入／直打見一粒掣／主畫面／SG18 掣）、Vercel 專案 Settings 的 Root Directory 人手核實（連接器 token 讀唔到 project，只憑 `vercel.json` 判 `dist`）、`/api` 冇後端驗票（SG12 定案接受）。

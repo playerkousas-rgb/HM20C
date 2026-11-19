@@ -15,10 +15,16 @@
         portalIds: ['appstore'],
         silentPortalIds: ['library'],
         // 額外放行來源（docs/50 SG19：`allowedOrigins` 係「額外」來源，同 portalIds 聯集，
-        // 只放行、唔會畫成掣）。GitHub 係「上架前自己用」嘅入口：主站未上架之前，
-        // 由 GitHub repo 頁撳 Vercel 部署網址／README 連結進入，Referer 就係 github.com。
-        // ⚠️ 呢條只覆蓋「由 GitHub 撳入」；直接打網址仍然見攔截卡（你要嘅未上架自助入口
-        //    有另一個正路做法＝先「加入主畫面」，之後 allowStandalone 照放行）。
+        // 只放行、唔會畫成掣）。用途＝「上架前自己用」。
+        // ⚠️ 2026-11-19 實查：GitHub **唔會**送 Referer —— repo 主頁／README 對外連結
+        //    預設 `rel="noopener noreferrer"`，GitHub 自己嘅 `Referrer-Policy` 係
+        //    `no-referrer-when-downgrade`。即係「撳 GitHub 條 link」到本站時
+        //    `document.referrer` 係空字串，靠 github.com 放行**實際上行不通**
+        //    （docs/50 §0 就係講同一件事：noreferrer 會清空 Referer）。
+        //    所以呢行只係「有 Referer 就放行」嘅保底，唔算入口。
+        // 真正嘅自助入口（已開）：① 由 APP STORE／圖書館撳入；② 任何情況下
+        //    先「加入主畫面」→ 之後撳 icon 直入（allowStandalone，已裝主畫面唔會被攔）；
+        //    ③ 自己電腦本機開發 → 加 allowLocalhost: true。
         allowedOrigins: ['https://github.com'],
         allowStandalone: true,
         autoRedirectSeconds: 0

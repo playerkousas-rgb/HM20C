@@ -24,7 +24,10 @@ function offlineWorker() {
         '/apple-touch-icon.png', '/icon-192.png', '/icon-512.png',
         '/icons/v1/favicon.ico', '/icons/v1/favicon-16.png', '/icons/v1/favicon-32.png', '/icons/v1/apple-touch-icon.png',
         '/icons/v1/icon-192.png', '/icons/v1/icon-512.png', '/icons/v1/icon-maskable-192.png', '/icons/v1/icon-maskable-512.png', '/icons/v1/og-image.png',
-        '/landsd-logo.svg', '/third-party-licenses.txt', ...built,
+        '/landsd-logo.svg', '/third-party-licenses.txt',
+        // Entry-gate 白名單檔要跟住 app shell 一齊預載；否則離線重開時閘門載入失敗，
+        // 頁面雖然照開，但白名單檢查會靜靜失效（唔一致）。
+        '/store_gate_v1.0.js', ...built,
       ])].sort();
       // Hashed bundles identify themselves by filename; unhashed public files,
       // HTML metadata and package version also need to invalidate the worker.

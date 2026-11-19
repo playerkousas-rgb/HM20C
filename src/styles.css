@@ -31,6 +31,12 @@ a { color: inherit; }
 .header-right { display: flex; align-items: center; gap: 28px; }
 .header-local { font-size: 11px; font-weight: 600; color: #839288; letter-spacing: .03em; }
 .header-dot, .saved-badge span { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #77a17c; margin-right: 7px; vertical-align: 1px; }
+/* SG18：常駐、低調、非阻塞嘅「讚好／收藏」回跳掣（docs/50 §1）。
+   [hidden] 必須有明確 display:none，否則 display:inline-flex 會令 hidden 但照顯示＝死連。 */
+.support-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; padding: 0 12px; border: 1px solid #e3d8c4; border-radius: 9px; background: #fbf7ee; color: #8a6a35; font-size: 12px; font-weight: 750; text-decoration: none; white-space: nowrap; }
+.support-btn svg { flex: 0 0 auto; color: #c1873a; }
+.support-btn:hover { background: #f6eddc; border-color: #d9c7a5; }
+.support-btn[hidden], .support-btn[hidden] span { display: none; }
 .header-about { display: flex; align-items: center; gap: 7px; border: 1px solid #e5ebe5; border-radius: 9px; background: #fff; color: #536a5c; font-size: 12px; font-weight: 700; padding: 9px 12px; }
 .header-about:hover, .square-action:hover:not(:disabled), .gpx-buttons button:hover:not(:disabled) { background: #f3f7f0; border-color: #c8d9c8; }
 .workspace { display: flex; flex: 1; min-height: 0; }
@@ -286,6 +292,8 @@ a { color: inherit; }
   .header-right { gap: 0; }
   .header-about { width: 34px; height: 34px; border: 0; padding: 0; display: grid; place-items: center; background: #f3f7f1; border-radius: 9px; }
   .header-about span { display: none; }
+  .support-btn { width: 34px; min-height: 34px; padding: 0; border-color: #e6dcc8; }
+  .support-btn span { display: none; }
   .workspace { flex-direction: column; }
   .map-panel { order: 1; flex: 1 1 0; width: 100%; }
   .planner { order: 2; width: 100%; flex: 0 0 auto; overflow: visible; padding: 0 16px 12px; border: 0; border-top: 1px solid #e7ede6; border-radius: 17px 17px 0 0; margin-top: -9px; box-shadow: 0 -5px 18px rgba(31, 52, 35, .045); }
@@ -636,3 +644,8 @@ a { color: inherit; }
 .question-confirm span { flex-basis: 100%; line-height: 1.6; }
 .question-advanced { border-top: 1px solid #c6dace; margin: 14px 0; padding-top: 10px; }
 .question-advanced summary { cursor: pointer; font-size: 13px; font-weight: 700; color: #28583d; padding: 8px 0; }
+
+/* SG18：有列印輸出時（本 App 現時冇列印功能）都唔會印出「讚好／收藏」掣。 */
+@media print {
+  .support-btn { display: none !important; }
+}

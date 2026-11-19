@@ -15,6 +15,7 @@ import ResectionCard from './components/ResectionCard';
 import { ExerciseHome, ExerciseMarkCard, ExerciseScanner } from './components/ExerciseContent';
 import { QuestionBank, QuestionMember, QuestionOverviewCard, QuestionSetEditor, QuestionShare } from './components/QuestionSets';
 import { useQuestionSets } from './hooks/useQuestionSets';
+import StoreSupportLink from './components/StoreSupportLink';
 import { decodeShared, questionAsExercise } from './lib/questionSet';
 import { leaderAnswer, questionOverviewItems } from './lib/questionOverview';
 import { BOOKMARKS_KEY, loadBookmarks, makeBookmark, MAX_BOOKMARKS, saveBookmarks } from './lib/bookmarks';
@@ -712,7 +713,7 @@ function App() {
   return <div className="app-shell">
     <header className="app-header">
       <div className="brand"><BrandMark/><div><div className="brand-name">山野地圖<span className="brand-separator"> / </span><span className="brand-en">SCOUT TRAIL MAP</span></div><div className="brand-sub">為每一次山野探索而設</div></div></div>
-      <div className="header-right"><span className="header-local"><span className="header-dot"/>路線儲存在此裝置 · 磁石需連網</span><button className={`header-leader ${leaderActive ? 'is-active' : ''}`} onClick={() => setModal('leader')} aria-label={leaderActive ? '領袖模式已開啟' : '開啟領袖模式'}><LockKeyhole size={16}/><span>{leaderActive ? '領袖模式' : '領袖登入'}</span></button><button className="header-about header-exercise" onClick={() => setModal('exercise')}><QrCode size={16}/><span>題目 QR</span></button><button className="header-about" onClick={() => setModal('about')}><Info size={16}/><span>使用說明</span></button></div>
+      <div className="header-right"><StoreSupportLink/><span className="header-local"><span className="header-dot"/>路線儲存在此裝置 · 磁石需連網</span><button className={`header-leader ${leaderActive ? 'is-active' : ''}`} onClick={() => setModal('leader')} aria-label={leaderActive ? '領袖模式已開啟' : '開啟領袖模式'}><LockKeyhole size={16}/><span>{leaderActive ? '領袖模式' : '領袖登入'}</span></button><button className="header-about header-exercise" onClick={() => setModal('exercise')}><QrCode size={16}/><span>題目 QR</span></button><button className="header-about" onClick={() => setModal('about')}><Info size={16}/><span>使用說明</span></button></div>
     </header>
 
     <main className="workspace">

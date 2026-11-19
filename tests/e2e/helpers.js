@@ -24,3 +24,11 @@ export async function drawStroke(page, coords) {
   for (const [x, y] of coords.slice(1)) await page.mouse.move(box.x + x, box.y + y, { steps: 6 });
   await page.mouse.up();
 }
+
+// entry-gate 白名單：e2e 直接開 http://127.0.0.1 會被攔截（正確行為）。
+// 測試用 route 模擬「由指定入口撳入」的 Referer，等同 APP STORE 入口；
+// 這只是本機模擬，唔等於真機由 APP STORE 進入的驗收。
+export async function enterFromStore(page) {
+  await page.setExtraHTTPHeaders({ referer: 'https://scoutappstore.vercel.app/' });
+  return page;
+}

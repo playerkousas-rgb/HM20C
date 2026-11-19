@@ -1,8 +1,22 @@
 <!doctype html>
-<!-- © SCOUT SYSTEM · 山野地圖 v1.2.2 · 版本化源檔 -->
+<!-- © SCOUT SYSTEM · 山野地圖 v1.3.0 · 版本化源檔 -->
 <html lang="zh-Hant">
   <head>
     <meta charset="UTF-8" />
+    <script src="/store_gate_v1.0.js"></script>
+    <!-- 白名單閘門（docs/50 SG1–SG19）：經 SCOUT APP STORE 或用家已「加入主畫面」先用得；
+         圖書館（library）照樣放行但唔畫成掣；直接打網址只會見到 APP STORE 一粒掣。
+         本 repo 有 /api，前端閘只擋直開頁面，唔等於保護 /api（見 README「白名單」一節）。 -->
+    <script>
+      initStoreGate({
+        appKey: 'hm20c',
+        mode: 'entry-gate',
+        portalIds: ['appstore'],
+        silentPortalIds: ['library'],
+        allowStandalone: true,
+        autoRedirectSeconds: 0
+      });
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="copyright" content="© SCOUT SYSTEM" />
     <meta name="app-version" content="v%APP_VERSION%" />

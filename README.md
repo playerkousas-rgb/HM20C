@@ -1,6 +1,6 @@
 # 山野地圖 · Scout Trail Map
 
-版本：**v1.2.2** · © SCOUT SYSTEM · 版本來源：`package.json`；更新記錄見下方。
+版本：**v1.3.0** · © SCOUT SYSTEM · 版本來源：`package.json`；更新記錄見下方。
 
 以手機操作為先的童軍遠足地圖及 GPX 路線工具。結合 [HKMAP](https://github.com/playerkousas-rgb/HKMAP) 的地政總署地形底圖及 iB20000 等高線，與 Draw the Route 的路線規劃概念；兩種底圖互相獨立，切換時不會混合地名、等高線或底圖。
 
@@ -23,6 +23,30 @@
 - **手選地點書籤**：把地圖移到所需位置，按右側圖釘「選擇地區與書籤」，可為目前圖心命名、儲存、返回或刪除（最多 50 個）。書籤只儲存在這個瀏覽器／主畫面 App，不會上傳，也不會取得裝置位置或下載地圖；更換裝置、清除瀏覽器資料或使用另一瀏覽器可能失去書籤。返回書籤時維持當前底圖和比例，地形圖的自動方向可能隨圖心改變。離線前仍須另行預載並實際檢查該處畫面。
 - **整幅地形圖（試用）**：可嘗試從地政總署直接下載指定 iB20000 數碼 TIFF，或在手機自行下載後選取 TIFF／ZIP 本機匯入，儲存在裝置 IndexedDB；檔案不經 Arena／Vercel。程式依地理參考分塊解碼並投影，不讀 GPS、不混入即時底圖。未取得實際政府影像驗證，範圍、地名、等高線、CORS 和手機效能均須實機核對。郊遊圖整區來源尚未提供。
 - **預載目前畫面**：在有網絡時，分別儲存地形圖的底圖、中文地名及 20 米等高線，或郊遊圖的 OpenTopoMap 圖磚。離線可重新開啟 App、查看已存畫面及本機路線；圖心和已存畫面清單亦保存在本機。這是受限的單畫面預載，不等同整幅圖幅；與上方整幅試用互相獨立。
+
+## 準入白名單（v1.3.0，`entry-gate`）
+
+本程式加入了這個生態的**準入白名單**（規則見共通 readme 的 `docs/50` SG1–SG19）。實作只有三件事，**冇改架構、冇改 share／QR 格式、冇改任何儲存 key**：
+
+| 項 | 實際設定 |
+| --- | --- |
+| 模式 | `mode: 'entry-gate'`（頂層跳板，唔用 `<iframe>`，本機儲存照留在本網域） |
+| 放行來源 | `portalIds: ['appstore']` ＋ `silentPortalIds: ['library']`（經 **APP STORE** 或 **通告圖書館** 撳入都放行；圖書館只放行、唔畫成掣） |
+| 主畫面 | `allowStandalone: true`（已「加入主畫面」的用家撳 icon 直入，唔會被攔） |
+| 攔截卡 | `autoRedirectSeconds: 0`（停低顯示提示卡，只出 **一粒** 前往 APP STORE 的掣，唔會自動彈走） |
+| SG18 掣 | 頂欄右上「讚好／收藏」，網址由 `ScoutStoreGate.getAppStoreUrl('hm20c')` 組出，開新分頁回主站詳情卡；`ScoutStoreGate` 未載入時保持隱藏 |
+| 冇做的事 | 零彈窗／倒數／遮罩／supportNudge 浮窗；零主站 Supabase 直連、零 anon key、零 `bump_hearts`／`bump_stars` |
+
+檔案位置：閘門原封不動由共通 readme 抄到 `public/store_gate_v1.0.js`（Vite 會複製到網站根目錄），並在版本化入口 `index_v1.3.0.html` 的 `<meta charset>` 之後掛入；入口由 `npm run sync:index` 產生為 `index.html`。Vercel 發佈根目錄＝repo 根目錄，`vercel.json` 的 `outputDirectory` 為 `dist`（`/store_gate_v1.0.js` 由 `public/` 複製過去）。
+
+**誠實限制**（唔可以當成安全邊界）：
+
+1. 前端閘只擋「直接開頁面」的一般用家，擋唔到 DevTools 改 `sessionStorage`／`curl` 偽造 `Referer`。
+2. 本 repo **有** `/api/leader`、`/api/leader-verify`、`/api/activity`。今次按共通 readme SG12 的定案**冇加後端驗票**，所以知道網址的人仍然可以直接呼叫這些函數；`LEADER_PASSWORD` 與 Cloudflare Worker 的驗票仍是它們自己的防線。
+3. 由通告圖書館撳入要放行得到，前提是圖書館那條連結已改為 `rel="noopener"`（共通 readme `docs/50` §4.4，2026-11-17 已在 `scout-circulars` 完成）；若日後又加回 `noreferrer`，圖書館入口會變成被攔。
+4. 舊書籤／已轉發的網址：用家會被攔一次，撳一粒掣返回 APP STORE 即可再用，資料唔會因此消失。
+5. 「加入主畫面」只應由入口進入之後再做（SG7）；直接開網址再加主畫面，日後一樣可以用，但唔建議。
+6. 白名單檔已加入離線 app shell 清單（`vite.config.js`），離線重開時閘門照樣執行；但離線狀態下攔截卡上「前往 APP STORE」掣一樣需要網絡，所以離線前請先由入口進入並確認可以正常使用。
 
 ## 重要限制及安全
 
@@ -165,7 +189,7 @@ node scripts/final_check_v1.0.mjs --json  # 機器可讀測試結果及未驗證
 
 - **瘦身／離線**：`.vercelignore` 排除測試、秘密及地圖檔；S7 守門要求 `dist < 5 MiB`、單一 bundle `< 2 MiB`。Noto Sans TC 只預載程式介面使用到的字型分片；`predev`／`prebuild` 自動按介面文字更新清單，使用者輸入的其他字靠裝置字型，仍要在實機離線核對。GeoTIFF、ZIP、QR 編解碼按需載入，但所有產生的程式 chunk 仍由正式離線 shell 預先快取；地圖仍不放進部署。G11 文檔另列整個網站 `dist ≤ 1 MB` 的更嚴格目標，本 App 含地圖引擎及離線中文字，**目前未達此目標**，不為縮至 1 MB 而刪去必要功能；S7 的 5 MiB 是目前硬守門。
 - **G11 圖標**：`public/icons/v1/` 有 9 個 PNG／ICO、4 個 manifest 圖示及絕對 OG 圖片網址，CI 檢查尺寸與合計大小；安裝及分享顯示仍需實機驗證。已安裝 App 的舊圖標可能由系統快取。圖標網址設為 immutable；改圖時必須換版本目錄並更新 manifest、HTML、Service Worker 及守門。
-- **V1／V4**：`index_v1.2.2.html` 是版本化源檔，`npm run sync:index` 從它產生 Vite 固定入口 `index.html`，版號由 `package.json` 同步至頁面 metadata、標題及可見版權；Vite 程式／CSS 使用內容 hash 而非逐檔 `_vX.Y`，以維持 PWA 穩定網址和快取。更新時改 package／lock、改名及更新版本化源檔、執行同步、更新本版本記錄並跑全部檢查；舊版保留在 Git 歷史。
+- **V1／V4**：`index_v1.3.0.html` 是版本化源檔，`npm run sync:index` 從它產生 Vite 固定入口 `index.html`，版號由 `package.json` 同步至頁面 metadata、標題及可見版權；Vite 程式／CSS 使用內容 hash 而非逐檔 `_vX.Y`，以維持 PWA 穩定網址和快取。更新時改 package／lock、改名及更新版本化源檔、執行同步、更新本版本記錄並跑全部檢查；舊版保留在 Git 歷史。
 - **EXCEPTION A1（未解決）**：活動 owner key 為支援重啟及跨裝置私人備份，仍明文保存在領袖裝置 localStorage 和私人備份，並非共通規範要求的「所有秘密僅伺服器端」。短期登入憑證只在記憶體；活動寫入仍須同時持有效登入和 owner key，但裝置遭他人存取、惡意擴充或備份洩漏仍有風險。不要保存敏感位置或在共用裝置使用；正式加強需另設伺服器帳戶／權限及遷移現有活動，不能單靠隱藏前端字樣解決。
 - **EXCEPTION W2/W3（未實作）**：目前產生的 QR PNG 是機器掃描資料碼，沒有嵌入共通規範的隱形水印或圖片追溯紀錄；直接改動像素可能影響掃描，故不聲稱 QR 圖符合 W2/W3。若必須執行，需另設可掃描性測試並由使用者確認方案，不應在未驗證下改碼。第三方地圖及字型不加本系統水印。
 - **版權及授權**：© SCOUT SYSTEM · COPYRIGHT SCOUT SYSTEM。此儲存庫未另列本 App 的軟件授權條款；如需再分發或改作，請先取得權利人授權。第三方套件和資料依各自授權，詳見下列來源及[授權全文](public/third-party-licenses.txt)。
@@ -174,6 +198,7 @@ node scripts/final_check_v1.0.mjs --json  # 機器可讀測試結果及未驗證
 
 | 版本 | 內容 |
 | --- | --- |
+| v1.3.0 | 加入準入白名單（`entry-gate`）：經 SCOUT APP STORE 或用家自行「加入主畫面」先用得，經通告圖書館進入照樣放行；頂欄新增「讚好／收藏」回跳主站詳情卡（零資料庫直連）；直接打網址只顯示一粒 APP STORE 掣。 |
 | v1.2.2 | 簡化活動管理操作，改題同步失敗可重試；說明共用資源、結束活動與解除本機連結的分別。 |
 | v1.2.1 | 分開活動題庫與固定題庫、多題新增入口、各題組獨立 QR、舊活動兼容及私人備份保留分類；移除舊單題設題入口。 |
 | v1.2.0 | 獨立練習 QR、領袖自訂及延長期限、成員手動更新、Cloudflare Free 設定與出發前後備提示。 |

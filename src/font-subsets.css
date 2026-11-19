@@ -9,6 +9,16 @@
   unicode-range: U+930b,U+930f,U+9312,U+9315,U+9319-931b,U+931d-931f,U+9321,U+9323-9325,U+9327-932a,U+932c-932e,U+9331-9333,U+9335,U+9338,U+933c,U+9340-9341,U+9345-9349,U+934f-9352,U+9354,U+9356-935a,U+935c-9360,U+9363-9367,U+9369-936a,U+936c,U+936e,U+9370-9371,U+9373,U+9376,U+9379-937a,U+937c,U+9385,U+9387,U+938c,U+938f,U+9394,U+9397-9398,U+939a-939b,U+939d-939e,U+93a1-93a3,U+93a6-93a7,U+93a9-93aa,U+93ac-93ad,U+93af-93b0,U+93b3-93bb,U+93bd-93be,U+93c0-93c4,U+93c7,U+93ca-93cd,U+93d0-93d1,U+93d6-93d8,U+93dc-93de,U+93e0,U+93e4,U+93e8,U+93ee,U+93f0,U+93f5,U+93f7-93f9,U+93fb,U+9403,U+9407,U+940f-9410,U+9413-9414,U+9417,U+9419;
 }
 
+/* noto-sans-tc-[71]-wght-normal */
+@font-face {
+  font-family: 'Noto Sans TC Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url(../node_modules/@fontsource-variable/noto-sans-tc/files/noto-sans-tc-71-wght-normal.woff2) format('woff2-variations');
+  unicode-range: U+6312-6313,U+6319-631b,U+631d-6321,U+6323-6325,U+632d-632e,U+6332,U+6334-6339,U+633b-633c,U+633e-6340,U+6342-6346,U+634b-634c,U+634e,U+6352,U+6357,U+635a,U+635c,U+635e-635f,U+6361,U+6363,U+6365,U+6369,U+636b-636d,U+636f-6370,U+6373,U+6375-6376,U+637a-637b,U+637d,U+6381,U+6384,U+6387,U+638a,U+638d-638e,U+6390,U+6394-6397,U+639e-639f,U+63a3-63a4,U+63a6,U+63ac-63af,U+63b1-63b4,U+63b7,U+63b9-63bb,U+63bd-63be,U+63c3-63c4,U+63c8,U+63cd-63ce,U+63d1,U+63d6,U+63dc,U+63de,U+63e0,U+63e3-63e4,U+63e6,U+63e9,U+63f0,U+63f2-63f3,U+63f5-63f8,U+63fa,U+63fc-63fe,U+6400-6402,U+6405-6406,U+6409-640c,U+6410,U+6414-6415,U+6418,U+641b,U+641f-6423,U+6425-6428,U+642a;
+}
+
 /* noto-sans-tc-[94]-wght-normal */
 @font-face {
   font-family: 'Noto Sans TC Variable';
@@ -17,6 +27,16 @@
   font-weight: 100 900;
   src: url(../node_modules/@fontsource-variable/noto-sans-tc/files/noto-sans-tc-94-wght-normal.woff2) format('woff2-variations');
   unicode-range: U+2139,U+2153,U+2194-2197,U+2199,U+219d-219e,U+21a0,U+21a9-21aa,U+21ac,U+21af-21b1,U+21b3-21b5,U+21ba-21bb,U+21c4,U+21ca,U+21cc,U+21d0,U+21d2-21d4,U+21d8,U+21dd,U+21e2-21e9,U+2200,U+2202,U+2205-2208,U+220e-220f,U+2211-2212,U+2215,U+2217-221a,U+221d-2220,U+2225,U+2227-222b,U+222e,U+2234-2237,U+223c-223d,U+2248,U+2256,U+2260-2261,U+2264-2265,U+226a-226b,U+226e-226f,U+2282-2283,U+2295-2296,U+2299,U+22a5,U+22b0-22b1,U+22b9,U+22bf,U+22c5-22c6,U+22c8,U+22d0-22d1,U+22ee,U+2312-2313,U+2318,U+231a-231b,U+2323,U+2328,U+239d,U+23a0,U+23af,U+23e4,U+23e9-23ea,U+23ec,U+23f0-23f3,U+23fa,U+2445,U+2460-2471,U+2474;
+}
+
+/* noto-sans-tc-[103]-wght-normal */
+@font-face {
+  font-family: 'Noto Sans TC Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url(../node_modules/@fontsource-variable/noto-sans-tc/files/noto-sans-tc-103-wght-normal.woff2) format('woff2-variations');
+  unicode-range: U+a1-a2,U+a4,U+a6-a8,U+aa,U+ac,U+af,U+b1,U+b5-b6,U+b8-ba,U+bc-be,U+c3-c7,U+cb,U+cf-d1,U+d5,U+d8,U+dc-df,U+f0,U+f5,U+f8,U+fe-ff,U+105,U+107,U+109-10b,U+10f,U+117,U+119,U+11f,U+121,U+123-124,U+127,U+129,U+130,U+132-13f,U+141-142,U+14b,U+152-153,U+159-15b,U+15e-160,U+163-166,U+169,U+16e-16f,U+173-17e,U+192,U+1a0,U+1a4,U+1aa,U+1ac-1ad;
 }
 
 /* noto-sans-tc-[104]-wght-normal */

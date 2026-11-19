@@ -1,6 +1,6 @@
 # HM20C 六角度檢查與待驗收
 
-記錄日期：2026-11-03（香港） · 版本：v1.2.2 · 參考 [SCOUT SYSTEM 共通規範](https://github.com/playerkousas-rgb/readme)。
+記錄日期：2026-11-03（香港） · 版本：v1.3.0 · 參考 [SCOUT SYSTEM 共通規範](https://github.com/playerkousas-rgb/readme)。
 
 這是專案適配檢查，不是官方地圖認證、真機驗收或行山安全保證。具體命令及每次執行結果以 `npm run final-check`／`node scripts/final_check_v1.0.mjs --json` 的輸出為準。瀏覽器測試均以合成底圖、模擬等高線／路由及本機記憶體活動服務執行；Worker 額外使用本機 workerd 及 D1／SQLite 測試。正式離線測試使用生成的 Service Worker 和合成 GeoTIFF。
 
@@ -20,6 +20,14 @@
 首次完整瀏覽器測試為 36/38：快速移圖後，書籤對話框顯示座標與儲存值可能不同；觸控繪路後緊接的點選有時被原生手勢吞掉。已分別改用同一圖心快照、在繪路期間取消原生 touchmove，並補充回歸：模擬對話框開啟後地圖仍移動、320 px 觸控切換及 A/B 逐點檢查，兩項各連續重複 8 次通過。這仍不是實機驗收。
 
 PR #5 的 GitHub 檢查曾通過，但合併後 main 的一次檢查在題目方位選點得到 0/2。模擬慢底圖可重現類似結果：等高線標籤已正常而底圖尚未載妥，App 按安全規則拒絕選點；這不能證明該次 CI 失敗的唯一原因。現已顯示底圖載入提示、在選點／繪路測試前等待底圖狀態，並新增慢圖測試確認載妥前拒絕、載妥後同一點可選；另保留點擊位置及狀態診斷。GitHub 檢查仍須在新提交及合併後各自確認。
+
+## v1.3.0 白名單與 SG18（2026-11-19 本機檢查）
+
+- 閘門檔 `public/store_gate_v1.0.js` 由共通 readme **原封不動**抄入（sha256 `45de189d68e9fbf64d560a4306987d1a03cd03f03e56dd24222a4343011e3d5b`），冇改邏輯。
+- 版本化入口 `index_v1.3.0.html` 在 `<meta charset="UTF-8">` 之後、`<meta name="viewport">` 之前掛入 `initStoreGate({ appKey: 'hm20c', mode: 'entry-gate', portalIds: ['appstore'], silentPortalIds: ['library'], allowStandalone: true, autoRedirectSeconds: 0 })`；`index.html` 由 `npm run sync:index` 產生。
+- SG18 掣：`src/components/StoreSupportLink.jsx`（網址只由 `ScoutStoreGate.getAppStoreUrl('hm20c')` 組出，未載入即 `hidden`）＋ `src/App.jsx` 頂欄；CSS `src/styles.css` 有 `.support-btn[hidden] { display: none }`、40px 觸控高度、`@media print` 隱藏。
+- 自動檢查：`npm run guard` 全綠、`npm test` 87 項全綠、`npm run build` 成功（`dist` < 5MB）。瀏覽器 e2e 及 `npm audit`（需網絡）本機未跑，見下。
+- **仍然未做**：真機實測（APP STORE 入／圖書館入／直打見一粒掣／主畫面／SG18 掣）、Vercel 專案 Settings 的 Root Directory 人手核實（連接器 token 讀唔到 project，只憑 `vercel.json` 判 `dist`）、`/api` 冇後端驗票（SG12 定案接受）。
 
 ## 特別重要的未完成事項
 

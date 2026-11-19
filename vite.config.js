@@ -24,7 +24,10 @@ function offlineWorker() {
         '/apple-touch-icon.png', '/icon-192.png', '/icon-512.png',
         '/icons/v1/favicon.ico', '/icons/v1/favicon-16.png', '/icons/v1/favicon-32.png', '/icons/v1/apple-touch-icon.png',
         '/icons/v1/icon-192.png', '/icons/v1/icon-512.png', '/icons/v1/icon-maskable-192.png', '/icons/v1/icon-maskable-512.png', '/icons/v1/og-image.png',
-        '/landsd-logo.svg', '/third-party-licenses.txt', ...built,
+        '/landsd-logo.svg', '/third-party-licenses.txt',
+        // Entry-gate 白名單檔要跟住 app shell 一齊預載；否則離線重開時閘門載入失敗，
+        // 頁面雖然照開，但白名單檢查會靜靜失效（唔一致）。
+        '/store_gate_v1.0.js', ...built,
       ])].sort();
       // Hashed bundles identify themselves by filename; unhashed public files,
       // HTML metadata and package version also need to invalidate the worker.
@@ -63,8 +66,26 @@ function localLeaderApi() {
   return { name: 'local-leader-api', configureServer: middleware, configurePreviewServer: middleware };
 }
 
+// entry-gate 白名單（docs/50 SG5）會攔直接開網址，包括 e2e／本機預覽。
+// 只喺 Vite dev／preview server 注入一行「本機測試通行證」（sessionStorage，
+// entry-gate 自己嘅機制），等同「呢個分頁已經由指定入口撳入過」。
+// ⚠️ 一定要注入喺閘門 script **之前**：閘門喺 <head> 即時執行，遲一行就照樣被攔。
+// 生產 build 唔會注入（apply: 'serve'），瀏覽器行為不變。
+const STORE_GATE_TAG = '<script src="/store_gate_v1.0.js"></script>';
+const LOCAL_STORE_PASS = '<script>try { sessionStorage.setItem("hm20c.store_pass", "1"); } catch {}</script>\n    ';
+function localStorePass() {
+  return {
+    name: 'local-store-pass',
+    apply: 'serve',
+    transformIndexHtml(html) {
+      if (!html.includes(STORE_GATE_TAG)) return html;   // 冇閘門就無需通行證
+      return html.replace(STORE_GATE_TAG, LOCAL_STORE_PASS + STORE_GATE_TAG);
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [appMetadata(), offlineWorker(), localLeaderApi()],
+  plugins: [appMetadata(), offlineWorker(), localLeaderApi(), localStorePass()],
   build: { rollupOptions: { output: { manualChunks(id) {
     if (/\/node_modules\/(react|react-dom|scheduler)\//.test(id)) return 'react-core';
     if (id.includes('/node_modules/leaflet/') || id.includes('/node_modules/@tomickigrzegorz/leaflet-rotate/')) return 'map-core';

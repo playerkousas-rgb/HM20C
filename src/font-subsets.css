@@ -19,6 +19,16 @@
   unicode-range: U+2139,U+2153,U+2194-2197,U+2199,U+219d-219e,U+21a0,U+21a9-21aa,U+21ac,U+21af-21b1,U+21b3-21b5,U+21ba-21bb,U+21c4,U+21ca,U+21cc,U+21d0,U+21d2-21d4,U+21d8,U+21dd,U+21e2-21e9,U+2200,U+2202,U+2205-2208,U+220e-220f,U+2211-2212,U+2215,U+2217-221a,U+221d-2220,U+2225,U+2227-222b,U+222e,U+2234-2237,U+223c-223d,U+2248,U+2256,U+2260-2261,U+2264-2265,U+226a-226b,U+226e-226f,U+2282-2283,U+2295-2296,U+2299,U+22a5,U+22b0-22b1,U+22b9,U+22bf,U+22c5-22c6,U+22c8,U+22d0-22d1,U+22ee,U+2312-2313,U+2318,U+231a-231b,U+2323,U+2328,U+239d,U+23a0,U+23af,U+23e4,U+23e9-23ea,U+23ec,U+23f0-23f3,U+23fa,U+2445,U+2460-2471,U+2474;
 }
 
+/* noto-sans-tc-[103]-wght-normal */
+@font-face {
+  font-family: 'Noto Sans TC Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url(../node_modules/@fontsource-variable/noto-sans-tc/files/noto-sans-tc-103-wght-normal.woff2) format('woff2-variations');
+  unicode-range: U+a1-a2,U+a4,U+a6-a8,U+aa,U+ac,U+af,U+b1,U+b5-b6,U+b8-ba,U+bc-be,U+c3-c7,U+cb,U+cf-d1,U+d5,U+d8,U+dc-df,U+f0,U+f5,U+f8,U+fe-ff,U+105,U+107,U+109-10b,U+10f,U+117,U+119,U+11f,U+121,U+123-124,U+127,U+129,U+130,U+132-13f,U+141-142,U+14b,U+152-153,U+159-15b,U+15e-160,U+163-166,U+169,U+16e-16f,U+173-17e,U+192,U+1a0,U+1a4,U+1aa,U+1ac-1ad;
+}
+
 /* noto-sans-tc-[104]-wght-normal */
 @font-face {
   font-family: 'Noto Sans TC Variable';

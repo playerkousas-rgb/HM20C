@@ -24,3 +24,9 @@ export async function drawStroke(page, coords) {
   for (const [x, y] of coords.slice(1)) await page.mouse.move(box.x + x, box.y + y, { steps: 6 });
   await page.mouse.up();
 }
+
+// entry-gate 白名單（docs/50 SG5）：e2e 直接開 127.0.0.1 會被攔，呢個係正確行為。
+// 測試用真實機制繞過：導覽前寫入 entry-gate 自己嘅 session 通行證，等同「呢個分頁
+// 已經由指定入口撳入過」。比起偽造 Referer 更穩（Chromium 會攔偽造 top-level Referer）。
+// ⚠️ 純本機模擬，唔等於真機由 APP STORE 撳入／直打網址嘅驗收。
+export const STORE_PASS_SCRIPT = "try { sessionStorage.setItem('hm20c.store_pass', '1'); } catch {}";

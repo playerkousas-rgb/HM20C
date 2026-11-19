@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.js';
 import { deflateSync } from 'node:zlib';
 import { writeArrayBuffer } from 'geotiff';
 import { BlobReader, BlobWriter, ZipWriter } from '@zip.js/zip.js';

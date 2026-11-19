@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures.js';
 import QRCode from 'qrcode';
 import { exerciseUrl } from '../../src/lib/exercise';
 import { answerPacket, answerShare, questionShare, standaloneAnswerPacket } from '../../src/lib/questionSet';

@@ -320,7 +320,9 @@ function checkVersionSync() {
     n++;
     const tag = `v${m[1]}`;
     if (!TEXT_EXT.has(f.ext)) continue;
-    const txt = readFileSync(f.p, 'utf8');
+    // 共通 readme 的白名單閘門檔名自帶版本（store_gate_v1.0.js），唔係本 App 版號；
+    // 抄檔時要原名原封不動，所以掃描前先把呢個固定路徑剔走，免得 V1 誤判。
+    const txt = readFileSync(f.p, 'utf8').replaceAll('/store_gate_v1.0.js', '/store-gate.js');
     if (!txt.includes(tag)) { err(`V1：${rel(f.p)} 檔名有 ${tag} 但內文冇 — 要同步改`); continue; }
     const others = [...new Set(txt.match(/v\d+\.\d+(?:\.\d+)?/g) || [])].filter((v) => v !== tag);
     if (others.length) err(`V1：${rel(f.p)} 內文版號唔一致：${others.join(',')} vs ${tag}（V3 五步）`);

@@ -292,7 +292,7 @@ a { color: inherit; }
   .header-right { gap: 0; }
   .header-about { width: 34px; height: 34px; border: 0; padding: 0; display: grid; place-items: center; background: #f3f7f1; border-radius: 9px; }
   .header-about span { display: none; }
-  .support-btn { width: 34px; min-height: 34px; padding: 0; border-color: #e6dcc8; }
+  .support-btn { width: 40px; min-height: 40px; padding: 0; border-color: #e6dcc8; }
   .support-btn span { display: none; }
   .workspace { flex-direction: column; }
   .map-panel { order: 1; flex: 1 1 0; width: 100%; }

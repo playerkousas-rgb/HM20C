@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import React from 'react';
 import { act } from 'react';
@@ -178,5 +178,18 @@ describe('production config matches the shared A-group instruction verbatim', ()
     expect(html.indexOf('/store_gate_v1.0.js')).toBeLessThan(html.indexOf('name="viewport"'));
     expect(html).not.toContain("mode: 'iframe-only'");
     expect(html).not.toContain("mode: 'closed'");
+  });
+});
+
+describe('dev/preview only test pass', () => {
+  it('injects the pass in Vite serve mode only, never into the production build', () => {
+    const vite = readFileSync(path.join(process.cwd(), 'vite.config.js'), 'utf8');
+    expect(vite).toContain("apply: 'serve'");
+    expect(vite).toContain("sessionStorage.setItem('hm20c.store_pass', '1')");
+    const dist = path.join(process.cwd(), 'dist/index.html');
+    if (existsSync(dist)) {
+      const built = readFileSync(dist, 'utf8');
+      expect(built).not.toContain('store_pass');   // 生成本機通行證唔准入生產版本
+    }
   });
 });

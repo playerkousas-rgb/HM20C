@@ -37,6 +37,8 @@
 | SG18 掣 | 頂欄右上「讚好／收藏」，網址由 `ScoutStoreGate.getAppStoreUrl('hm20c')` 組出，開新分頁回主站詳情卡；`ScoutStoreGate` 未載入時保持隱藏 |
 | 冇做的事 | 零彈窗／倒數／遮罩／supportNudge 浮窗；零主站 Supabase 直連、零 anon key、零 `bump_hearts`／`bump_stars` |
 
+測試說明：`vite.config.js` 有一個只在 **dev／preview**（`apply: 'serve'`）生效的小插件，會喺本機預覽注入一行「本機測試通行證」（寫 `sessionStorage['hm20c.store_pass']`，即 entry-gate 自己嘅機制），令 e2e 同本機預覽唔會全部被閘攔住。**生產 build 唔會注入**（已有測試鎖住 `dist/index.html` 唔可以出現 `store_pass`），所以線上行為同真理倉方案完全一致。
+
 檔案位置：閘門原封不動由共通 readme 抄到 `public/store_gate_v1.0.js`（Vite 會複製到網站根目錄），並在版本化入口 `index_v1.3.0.html` 的 `<meta charset>` 之後掛入；入口由 `npm run sync:index` 產生為 `index.html`。Vercel 發佈根目錄＝repo 根目錄，`vercel.json` 的 `outputDirectory` 為 `dist`（`/store_gate_v1.0.js` 由 `public/` 複製過去）。
 
 **誠實限制**（唔可以當成安全邊界）：

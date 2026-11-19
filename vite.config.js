@@ -66,8 +66,22 @@ function localLeaderApi() {
   return { name: 'local-leader-api', configureServer: middleware, configurePreviewServer: middleware };
 }
 
+// entry-gate 白名單（docs/50 SG5）會攔直接開網址，包括 e2e／本機預覽。
+// 只喺 Vite dev／preview server 注入一行「本機測試通行證」（sessionStorage，
+// entry-gate 自己嘅機制），等同「呢個分頁已經由指定入口撳入過」。
+// 生產 build 唔會注入（apply: 'serve'），瀏覽器行為不變。
+function localStorePass() {
+  return {
+    name: 'local-store-pass',
+    apply: 'serve',
+    transformIndexHtml(html) {
+      return html.replace('<body>', `<body>\n    <script>try { sessionStorage.setItem('hm20c.store_pass', '1'); } catch {}</script>`);
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [appMetadata(), offlineWorker(), localLeaderApi()],
+  plugins: [appMetadata(), offlineWorker(), localLeaderApi(), localStorePass()],
   build: { rollupOptions: { output: { manualChunks(id) {
     if (/\/node_modules\/(react|react-dom|scheduler)\//.test(id)) return 'react-core';
     if (id.includes('/node_modules/leaflet/') || id.includes('/node_modules/@tomickigrzegorz/leaflet-rotate/')) return 'map-core';

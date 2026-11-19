@@ -33,6 +33,7 @@
 | 模式 | `mode: 'entry-gate'`（頂層跳板，唔用 `<iframe>`，本機儲存照留在本網域） |
 | 放行來源 | `portalIds: ['appstore']` ＋ `silentPortalIds: ['library']`（經 **APP STORE** 或 **通告圖書館** 撳入都放行；圖書館只放行、唔畫成掣） |
 | 主畫面 | `allowStandalone: true`（已「加入主畫面」的用家撳 icon 直入，唔會被攔） |
+| 額外放行 | `allowedOrigins: ['https://github.com']`（文件支援的「額外來源」，只放行、唔畫成掣）：未上架前由 **GitHub repo 頁撳 Vercel／README 連結**都入得，唔使自己都連唔到 |
 | 攔截卡 | `autoRedirectSeconds: 0`（停低顯示提示卡，只出 **一粒** 前往 APP STORE 的掣，唔會自動彈走） |
 | SG18 掣 | 頂欄右上「讚好／收藏」，網址由 `ScoutStoreGate.getAppStoreUrl('hm20c')` 組出，開新分頁回主站詳情卡；`ScoutStoreGate` 未載入時保持隱藏 |
 | 冇做的事 | 零彈窗／倒數／遮罩／supportNudge 浮窗；零主站 Supabase 直連、零 anon key、零 `bump_hearts`／`bump_stars` |
@@ -45,6 +46,7 @@
 2. 本 repo **有** `/api/leader`、`/api/leader-verify`、`/api/activity`。今次按共通 readme SG12 的定案**冇加後端驗票**，所以知道網址的人仍然可以直接呼叫這些函數；`LEADER_PASSWORD` 與 Cloudflare Worker 的驗票仍是它們自己的防線。
 3. 由通告圖書館撳入要放行得到，前提是圖書館那條連結已改為 `rel="noopener"`（共通 readme `docs/50` §4.4，2026-11-17 已在 `scout-circulars` 完成）；若日後又加回 `noreferrer`，圖書館入口會變成被攔。
 4. 舊書籤／已轉發的網址：用家會被攔一次，撳一粒掣返回 APP STORE 即可再用，資料唔會因此消失。
+4a. **GitHub 放行只覆蓋「由 GitHub 撳入」**：由 `github.com` 任何頁面撳連結過去，Referer 就係 `https://github.com`，所以放行；但**直接打網址（書籤／自己打）就冇 Referer，一樣會見攔截卡**。未上架前想自助用，正路做法係：由 GitHub 撳入一次 → 瀏覽器選單「加入主畫面」→ 之後撳 icon 直入（`allowStandalone` 放行）。Codespaces／`github.dev` 預覽係另一個 origin（`*.app.github.dev`），今次**未**加入；要就講一聲。
 5. 「加入主畫面」只應由入口進入之後再做（SG7）；直接開網址再加主畫面，日後一樣可以用，但唔建議。
 6. 白名單檔已加入離線 app shell 清單（`vite.config.js`），離線重開時閘門照樣執行；但離線狀態下攔截卡上「前往 APP STORE」掣一樣需要網絡，所以離線前請先由入口進入並確認可以正常使用。
 

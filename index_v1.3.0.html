@@ -13,6 +13,12 @@
         mode: 'entry-gate',
         portalIds: ['appstore'],
         silentPortalIds: ['library'],
+        // 額外放行來源（docs/50 SG19：`allowedOrigins` 係「額外」來源，同 portalIds 聯集，
+        // 只放行、唔會畫成掣）。GitHub 係「上架前自己用」嘅入口：主站未上架之前，
+        // 由 GitHub repo 頁撳 Vercel 部署網址／README 連結進入，Referer 就係 github.com。
+        // ⚠️ 呢條只覆蓋「由 GitHub 撳入」；直接打網址仍然見攔截卡（你要嘅未上架自助入口
+        //    有另一個正路做法＝先「加入主畫面」，之後 allowStandalone 照放行）。
+        allowedOrigins: ['https://github.com'],
         allowStandalone: true,
         autoRedirectSeconds: 0
       });

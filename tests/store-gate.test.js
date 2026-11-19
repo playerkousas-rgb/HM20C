@@ -97,11 +97,34 @@ describe('store gate (entry-gate) — SG19 button source split', () => {
     expect(document.querySelectorAll('#scoutStoreGate .sg-cta')).toHaveLength(1);
   });
 
+  it('lets a GitHub referral in (allowedOrigins) without adding a button', () => {
+    const decision = run({ ...OPTIONS, allowedOrigins: ['https://github.com'] }, { referrer: 'https://github.com/playerkousas-rgb/HM20C' });
+    expect(decision.allowed).toBe(true);
+    expect(decision.reason).toBe('referrer-whitelist');
+    expect(document.querySelectorAll('#scoutStoreGate .sg-cta')).toHaveLength(0);
+  });
+
+  it('still blocks a direct open when only GitHub is extra-allowed', () => {
+    const decision = run({ ...OPTIONS, allowedOrigins: ['https://github.com'] });
+    expect(decision.allowed).toBe(false);
+    expect(document.querySelectorAll('#scoutStoreGate .sg-cta')).toHaveLength(1);
+  });
+
+  it('allowedOrigins does not shadow the registry (library still reports matchedPortalId)', () => {
+    const decision = run({ ...OPTIONS, allowedOrigins: ['https://github.com'] }, { referrer: 'https://scout-circulars.vercel.app/' });
+    expect(decision.matchedPortalId).toBe('library');
+  });
+
   it('never auto-redirects when autoRedirectSeconds is 0', () => {
-    const spy = vi.spyOn(window, 'setTimeout');
-    run(OPTIONS);
-    expect(spy).not.toHaveBeenCalled();
-    spy.mockRestore();
+    const calls = [];
+    const original = window.setTimeout;
+    window.setTimeout = (fn, delay, ...rest) => { calls.push(delay); return original(fn, delay, ...rest); };
+    try {
+      run(OPTIONS);
+    } finally {
+      window.setTimeout = original;
+    }
+    expect(calls.filter((delay) => delay > 0)).toHaveLength(0);
   });
 });
 

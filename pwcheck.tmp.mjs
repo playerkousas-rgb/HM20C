@@ -1,0 +1,10 @@
+import { chromium } from 'playwright';
+const b = await chromium.launch({ args: ['--no-sandbox'] });
+const ctx = await b.newContext();
+const page = await ctx.newPage();
+await page.goto('http://127.0.0.1:5177/', { waitUntil: 'domcontentloaded' });
+await page.waitForTimeout(1500);
+console.log('gated attr:', await page.evaluate(() => document.documentElement.getAttribute('data-store-gated')));
+console.log('has gate box:', await page.evaluate(() => !!document.getElementById('scoutStoreGate')));
+console.log('root children:', await page.evaluate(() => document.getElementById('root')?.children.length));
+await b.close();

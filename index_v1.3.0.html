@@ -3,28 +3,16 @@
 <html lang="zh-Hant">
   <head>
     <meta charset="UTF-8" />
+    <!-- 準入白名單（共通 readme docs/50 SG1–SG19）。參數照 A-GROUP-INSTRUCTION 第 3 步原封不動：
+         mode / portalIds / silentPortalIds / allowStandalone / autoRedirectSeconds 都唔加亦唔減。
+         本 repo 有 /api，前端閘只擋直開頁面，唔等於保護 /api（見 README「準入白名單」一節）。 -->
     <script src="/store_gate_v1.0.js"></script>
-    <!-- 白名單閘門（docs/50 SG1–SG19）：經 SCOUT APP STORE 或用家已「加入主畫面」先用得；
-         圖書館（library）照樣放行但唔畫成掣；直接打網址只會見到 APP STORE 一粒掣。
-         本 repo 有 /api，前端閘只擋直開頁面，唔等於保護 /api（見 README「白名單」一節）。 -->
     <script>
       initStoreGate({
         appKey: 'hm20c',
         mode: 'entry-gate',
         portalIds: ['appstore'],
         silentPortalIds: ['library'],
-        // 額外放行來源（docs/50 SG19：`allowedOrigins` 係「額外」來源，同 portalIds 聯集，
-        // 只放行、唔會畫成掣）。用途＝「上架前自己用」。
-        // ⚠️ 2026-11-19 實查：GitHub **唔會**送 Referer —— repo 主頁／README 對外連結
-        //    預設 `rel="noopener noreferrer"`，GitHub 自己嘅 `Referrer-Policy` 係
-        //    `no-referrer-when-downgrade`。即係「撳 GitHub 條 link」到本站時
-        //    `document.referrer` 係空字串，靠 github.com 放行**實際上行不通**
-        //    （docs/50 §0 就係講同一件事：noreferrer 會清空 Referer）。
-        //    所以呢行只係「有 Referer 就放行」嘅保底，唔算入口。
-        // 真正嘅自助入口（已開）：① 由 APP STORE／圖書館撳入；② 任何情況下
-        //    先「加入主畫面」→ 之後撳 icon 直入（allowStandalone，已裝主畫面唔會被攔）；
-        //    ③ 自己電腦本機開發 → 加 allowLocalhost: true。
-        allowedOrigins: ['https://github.com'],
         allowStandalone: true,
         autoRedirectSeconds: 0
       });

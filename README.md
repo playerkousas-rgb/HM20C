@@ -33,7 +33,6 @@
 | 模式 | `mode: 'entry-gate'`（頂層跳板，唔用 `<iframe>`，本機儲存照留在本網域） |
 | 放行來源 | `portalIds: ['appstore']` ＋ `silentPortalIds: ['library']`（經 **APP STORE** 或 **通告圖書館** 撳入都放行；圖書館只放行、唔畫成掣） |
 | 主畫面 | `allowStandalone: true`（已「加入主畫面」的用家撳 icon 直入，唔會被攔） |
-| 額外放行 | `allowedOrigins: ['https://github.com']`（文件支援的「額外來源」，只放行、唔畫成掣）。**2026-11-19 實查：GitHub 對外連結用 `rel="noopener noreferrer"`，唔會送 Referer，所以由 GitHub 撳入其實放行唔到**；呢行只係「有 Referer 就放行」嘅保底 |
 | 攔截卡 | `autoRedirectSeconds: 0`（停低顯示提示卡，只出 **一粒** 前往 APP STORE 的掣，唔會自動彈走） |
 | SG18 掣 | 頂欄右上「讚好／收藏」，網址由 `ScoutStoreGate.getAppStoreUrl('hm20c')` 組出，開新分頁回主站詳情卡；`ScoutStoreGate` 未載入時保持隱藏 |
 | 冇做的事 | 零彈窗／倒數／遮罩／supportNudge 浮窗；零主站 Supabase 直連、零 anon key、零 `bump_hearts`／`bump_stars` |
@@ -46,9 +45,10 @@
 2. 本 repo **有** `/api/leader`、`/api/leader-verify`、`/api/activity`。今次按共通 readme SG12 的定案**冇加後端驗票**，所以知道網址的人仍然可以直接呼叫這些函數；`LEADER_PASSWORD` 與 Cloudflare Worker 的驗票仍是它們自己的防線。
 3. 由通告圖書館撳入要放行得到，前提是圖書館那條連結已改為 `rel="noopener"`（共通 readme `docs/50` §4.4，2026-11-17 已在 `scout-circulars` 完成）；若日後又加回 `noreferrer`，圖書館入口會變成被攔。
 4. 舊書籤／已轉發的網址：用家會被攔一次，撳一粒掣返回 APP STORE 即可再用，資料唔會因此消失。
-4a. **GitHub 唔係入口（實查）**：`https://github.com/playerkousas-rgb/HM20C` 上嘅部署網址連結係 `rel="noopener noreferrer nofollow"`，GitHub 亦送 `Referrer-Policy: no-referrer-when-downgrade`，所以撳入本站時 `document.referrer` 係空字串 → 會被當成「直接打網址」攔截。**未上架前自己點用**：① 由 APP STORE／通告圖書館撳入；② 撳入一次之後「加入主畫面」，之後撳 icon 直入（`allowStandalone` 放行，唔受 Referer 影響）；③ 自己電腦本機開發 → 加 `allowLocalhost: true`；④ 真係要完全唔攔，就暫時 `mode: 'open'`（上架後再落閘）。⑤ **一次過搞掂所有 App（唔使逐個改）**：喺 APP STORE 後台（`scoutappstore.vercel.app/#admin`）加一條普通 `<a href="https://hm20c.vercel.app" target="_blank" rel="noopener">` 直連——因為嗰頁同 APP STORE 同一個 origin，Referer 就係 `https://scoutappstore.vercel.app`，所有 A／B 組 App（`portalIds` 一定有 `appstore`，SG17）都會放行。關鍵：**唔可以加 `noreferrer`**（會清空 Referer，即刻失效）；亦要留意 `?app=<slug>` 深層連結對 `visible = false` 嘅 App 無效（`findAppByDeepKey` 會跳過），所以要用**直接網址**，唔係深層連結。
+4a. **照真理倉原方案，冇任何自訂放行來源**：參數同 A-GROUP-INSTRUCTION 第 3 步一字不差（冇加 `allowedOrigins`／`allowLocalhost`）。所以只有「經 APP STORE／通告圖書館撳入」同「已加入主畫面」兩種情況入得；**GitHub 一樣**——GitHub 對外連結係 `rel="noopener noreferrer"` 加 `Referrer-Policy: no-referrer-when-downgrade`，去到本站 `document.referrer` 係空字串，會被當成直接打網址攔截。
 5. 「加入主畫面」只應由入口進入之後再做（SG7）；直接開網址再加主畫面，日後一樣可以用，但唔建議。
 6. 白名單檔已加入離線 app shell 清單（`vite.config.js`），離線重開時閘門照樣執行；但離線狀態下攔截卡上「前往 APP STORE」掣一樣需要網絡，所以離線前請先由入口進入並確認可以正常使用。
+7. **未上架前自己點用**（唔使逐個 App 改）：喺 APP STORE 後台（`scoutappstore.vercel.app/#admin`）加一條普通 `<a href="https://hm20c.vercel.app" target="_blank" rel="noopener">` 直連——後台同 APP STORE 同一個 origin，Referer 就係 `https://scoutappstore.vercel.app`，所有 A／B 組 App 一次過放行。三個硬條件：**唔可以加 `noreferrer`**、要**直接網址**（`?app=` 深層連結對 `visible = false` 嘅 App 無效）、要**喺 APP STORE 域內**撳。呢部分由主站負責，本 repo 冇改 `website`。
 
 ## 重要限制及安全
 

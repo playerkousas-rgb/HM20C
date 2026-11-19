@@ -97,24 +97,6 @@ describe('store gate (entry-gate) — SG19 button source split', () => {
     expect(document.querySelectorAll('#scoutStoreGate .sg-cta')).toHaveLength(1);
   });
 
-  it('lets a GitHub referral in (allowedOrigins) without adding a button', () => {
-    const decision = run({ ...OPTIONS, allowedOrigins: ['https://github.com'] }, { referrer: 'https://github.com/playerkousas-rgb/HM20C' });
-    expect(decision.allowed).toBe(true);
-    expect(decision.reason).toBe('referrer-whitelist');
-    expect(document.querySelectorAll('#scoutStoreGate .sg-cta')).toHaveLength(0);
-  });
-
-  it('still blocks a direct open when only GitHub is extra-allowed', () => {
-    const decision = run({ ...OPTIONS, allowedOrigins: ['https://github.com'] });
-    expect(decision.allowed).toBe(false);
-    expect(document.querySelectorAll('#scoutStoreGate .sg-cta')).toHaveLength(1);
-  });
-
-  it('allowedOrigins does not shadow the registry (library still reports matchedPortalId)', () => {
-    const decision = run({ ...OPTIONS, allowedOrigins: ['https://github.com'] }, { referrer: 'https://scout-circulars.vercel.app/' });
-    expect(decision.matchedPortalId).toBe('library');
-  });
-
   it('never auto-redirects when autoRedirectSeconds is 0', () => {
     const calls = [];
     const original = window.setTimeout;
@@ -172,5 +154,29 @@ describe('SG18 support button rendering', () => {
     expect(link.getAttribute('target')).toBe('_blank');
     expect(link.getAttribute('rel')).toBe('noopener');
     act(() => { root2.unmount(); });
+  });
+});
+
+describe('production config matches the shared A-group instruction verbatim', () => {
+  const html = readFileSync(path.join(process.cwd(), 'index_v1.3.0.html'), 'utf8');
+
+  it('uses exactly appKey/mode/portalIds/silentPortalIds/allowStandalone/autoRedirectSeconds', () => {
+    for (const line of [
+      "appKey: 'hm20c'",
+      "mode: 'entry-gate'",
+      "portalIds: ['appstore']",
+      "silentPortalIds: ['library']",
+      'allowStandalone: true',
+      'autoRedirectSeconds: 0',
+    ]) expect(html).toContain(line);
+    expect(html).not.toContain('allowedOrigins');
+    expect(html).not.toContain('allowLocalhost');
+    expect(html).not.toContain('supportNudge');
+  });
+
+  it('loads the gate file before the viewport meta and never uses iframe-only or closed', () => {
+    expect(html.indexOf('/store_gate_v1.0.js')).toBeLessThan(html.indexOf('name="viewport"'));
+    expect(html).not.toContain("mode: 'iframe-only'");
+    expect(html).not.toContain("mode: 'closed'");
   });
 });
